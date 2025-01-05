@@ -1,0 +1,29 @@
+- Kernel instrumentation — [[July 28th, 2024]]
+    - DTrace is pretty awesome, the idea is that we should have zero-overhead tracing of the kernel even with thousands of trace points. Maximize both flexibility and performance.
+    - Function entrypoint tracing: register the tracepoint by having an unconditional jump to a nonexistent dtrace symbol, then modify the kernel linker to replace this jump with a no-op and register the tracepoint inside a special kernel table. When the tracepoint is enabled, edit kernel code to replace the nop with a jump to a special trampoline.
+    - Syscall tracing just modifies the kernel system call handler table. Same for interrupts, probably, just modify the interrupt descriptor table for your processor architecture.
+    - "D" programs are similar to awk, like pattern-matching blocks with basic conditionals.
+        - Clause-local and thread-local variables are prefixed with this-> and self->
+        - Seems like a very simple and concise expression language, quite different from eBPF in this way — look at how easy it is to call printf()
+        - The quantize() function even produces an ASCII art histogram in the terminal
+    - PID provider depends on OS, but it doesn't require process restarts, instead it produces a trap (signal -> transfers control to kernel mode) on the process
+    - "Speculative" tracing allows you to record data but discard it later if it is not interesting. Really, it just means you can delete from the associative data structure, not just add to it within a tracepoint handler.
+    - Case study on using DTrace to debug a complicated bug in X Server code on Solaris.
+    - What other tracers do people use? How does DTrace compare?
+        - Compare to Frida tracer on Android, which is useful because Java Virtual Machine has predefined hooks for doing things. It also works for Node.js, but it's limited.
+            - Expression language is JavaScript.
+        - "My favorite tracer is printf()"
+        - How do you instrument JavaScript in the browser? Chrome has a performance tab with every process, and the source of every line of code.
+        - Intel hardware-specific PT, which you can use with perf. Hardware-specific.
+            - How you might use it: if something is slow, break and dump the contents of the ring buffer to see what happened in the past few milliseconds.
+        - Valgrind / Callgrind — record all user-space function calls.
+    - Fun bullet point in the "What is eBPF?" article: __constant blinding__ to prevent JIT spraying attacks. What an interesting mitigation. Also, a bad pun. I'm constantly blinded.
+    - One person used it for research, documentation is pretty bad, kind of messy. Tried to reimplement TCP in an XDP program, but it didn't work because they had too much state inside the eBPF maps, didn't handle concurrency super well.
+    - Had a 30-minute break where we just chatted with group members for a while, and everyone seemed happy to talk. Now we're starting to read the PREVAIL blog post.
+        - Programming language background (PLDI/POPL slides): different zones for abstract interpretation, like integers, parity, octagons, and polyhedra. Stronger domains can prove assertions for a broader class of programs, but are slower.
+        - The "join" operation combines two models at different branches.
+        - Abstract domains must be __relational__ to track relationships between variables. They also need to track memory (register spilling) and avoid path enumeration.
+        - Regions are tagged as private (stack) or shared (packet, kernel).
+        - Variables are tagged as scalars, or pointers into various regions.
+    - Results of PREVAIL are not as fast as the Linux verifier, but they can still verify a fair subset of programs using just the zone domain. It's a nice way to compare different approaches to the verification problem.
+    - Solana's verifier is also eBPF? How does their verifier work?
