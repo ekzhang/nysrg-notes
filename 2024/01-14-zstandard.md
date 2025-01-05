@@ -1,0 +1,80 @@
+- Zstandard — [[January 14th, 2024]]
+    - From Yann Collet at Meta, a compression algorithm!
+    - Goals
+        - Big things in small boxes
+        - Done fast
+    - How
+        - Lempel-Ziv (1977)
+            - Remove common repeated patterns
+            - More of an algorithm __family__ than a specific algorithm
+            - Keep a sliding window of some size in bytes, then repeatedly move it forward while extracting the longest common substring as a pointer
+            - Naively O(NM^2) where M is window size, but can be done in O(N) linear time with string algorithms (suffix arrays)
+            - Practical efficiency depends on pointer encoding / specific wire format
+            - How would the window sizes work?
+                - Window size: zlib uses 32KB by default
+                - Limited by RAM
+                - Q: Index from the current position, or from the start of the search buffer?
+            - Q: Can you initialize it with a dictionary of common words?
+            - LZW (Lempel-Ziv-Welch): alternative variant using a dictionary
+            - Q: __How do you evaluate__ a compression algorithm?
+                - Hutter Prize
+                - Various text corpuses, all of Dropbox, all of GitHub?? idk
+                - Size and speed (both compression speed & decompression speed)
+            - Error correction (Gzip = DEFLATE + CRC-32)
+            - String transformations applied before compression
+                - Burrows-Wheeler (linear-time string transformation)
+                    - Moves similar parts of the text near each other
+                    - Used in bzip2
+                    - https://en.wikipedia.org/wiki/Burrows%E2%80%93Wheeler_transform
+                - Other permutations of the data
+                - Run-length encoding (RLE)
+        - Huffman coding (1951)
+            - Frequencies are different
+            - Prefix-free encoding
+            - **Assign less bits to the most common sequences of characters in the string!**
+                - Assign __more bits__ to the things that are less frequent
+                - Entropy
+            - Information theory
+            - Huffman coding is suboptimal
+                - Arithmetic coding is more efficient
+                - They lose up to a single token in the alphabet due to rounding
+            - Where is our frequency distribution from?
+                - Best is the document, but sometimes you can have a global dictionary
+        - Finite State Entropy (Collet, 2013)
+            - Entropy is the minimum number of __bits of information__ to express data.
+            - Claude Shannon: You can't do better than the [entropy](https://en.wikipedia.org/wiki/Shannon%27s_source_coding_theorem).
+            - Suppose we have a random sequence of iid characters drawn a discrete distribution. We want to encode this stream of random iid data. The entropy of this distribution is the lower bound on expected number of bits per token in the stream.
+            - 
+        - Fast = lots of C / SIMD / architecture magic, also multithreaded(?)
+    - Compression formats
+        - Gzip
+        - Zip
+        - MP4/MOV/??? "media container"
+    - Compression algorithms
+        - Lossless (~4x?)
+            - Data, text — you save "The Bible" a word can't be missing
+            - Huffman
+            - Brotli
+            - Zlib?
+            - Snappy
+            - DEFLATE
+        - Lossy
+            - JPEG (20x smaller, 50x)
+            - H.264/H.265
+    - Where do we use compression?
+        - Streaming images and movies
+        - Reduce payload on websockets (+ HTTP, gRPC)
+            - Almost all HTTP requests / responses are compressed
+            - "permessage-deflate" extension
+            - `Content-Encoding: zstd`
+        - Backups
+            - Long-term archival storage
+            - Tape drives
+        - Databases
+            - Parquet / Snappy
+            - DuckDB also uses Snappy
+        - Can you operate directly on compressed data?
+            - Yes — For example, wavelet trees provide a search index but also compression (__succinct data structures__)
+            - Decompress-on-demand (sectors, byte offsets)
+        - Trading compute for bandwidth / storage, balance systems
+        - Different parameters result in people designing different systems / architectures.
