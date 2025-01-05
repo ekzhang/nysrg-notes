@@ -1,0 +1,26 @@
+- Disaggregated Databases — [[June 9th, 2024]]
+    - Storage disaggregation is popular in practice, and memory disaggregation is a theoretical technology that hasn't seen widespread adoption yet.
+    - Depends on fundamental numbers in the latency of memory hierarchies.
+        - Cache (SRAM) — $100/GB, 1 ns
+        - DRAM — $5/GB, 100 ns
+        - SSD — $0.12/GB, 40 us
+        - HDD — $0.05/GB, 10 ms
+        - Tape drives — $0.005/GB, 1800000 ms
+    - SSD to DRAM has a big jump. There have been some research directions in making main memory non-volatile like attaching batteries, or Optane, but those were discontinued.
+    - "Enabling memory disaggregation is the advancement of fast networking technologies. In particular, recent generations of RDMA achieve sub-microsecond latency and hundreds of Gbps throughput. While this is still lower than the performance of buses, the boundary between local and remote machines is becoming blurred."
+    - CXL (Compute Express Link) tries to bridge the gap between local memory and RDMA. It's a replacement for PCIe. CXL.memory is a module for expanding main memory.
+    - Buses are fast because the components are on the same board.
+    - Is there a single point of failure in this pool? Unclear. But memory disaggregation seems like still a very experimental technology. CXL makes storage buses faster, but it's unclear if they can get to the speed of actual main memory.
+    - Differences between OLTP and OLAP databases, background mentioned differently. Paper seems more excited about expanding memory pools for OLAP workloads.
+    - Aurora paper: 2/3 quorums are adequate. "However, the failure of AZ C, due to a fire, roof failure, flood, etc, will break quorum for any of the replicas that concurrently have failures in AZ A or AZ B."
+    - Engineered for reliability with six-way replication: 2 copies of data in 3 AZs.
+    - Segments are 10 GB, and volumes can grow up to 64 TB. "A 10GB segment can be repaired in 10 seconds on a 10Gbps network link. We would need to see two such failures in the same 10 second window plus a failure of an AZ not containing either of these two independent failures to lose quorum."
+    - Storage system materializes databases pages by applying a log of write transactions. These are replicated to all 6 databases. The paper claims traditional replication in a system like MySQL would be "untenable" due to write amplification, but I didn't catch why. Maybe it's just an optimization, they do show numbers from an experiment that showi t's better.
+    - In any case, Aurora is layered in that the storage system itself reapplies transactions. So the storage is separated from the compute / query engine! Crash recovery is simplified. There would be lower overhead compared to distributed SQL, as long as your writes fit on a single node.
+    - Snowflake paper (NSDI '20): two key ideas in systems design
+        - "custom-designed storage system for management and exchange of ephemeral/intermediate data that is exchanged between compute nodes during query execution (e.g., tables exchanged during joins)"
+        - "Snowflake uses its ephemeral storage system not only for intermediate data, but also as a write-through “cache” for persistent data."
+    - So basically Snowflake reduces the network load caused by compute-storage disaggregation using their custom ephemeral storage engine & cache layer.
+    - Snowflake's customers issue a _lot_ of read-write queries, over half of all queries actually.
+    - Skewed distributions, very large variance in intermediate data sizes, still high cache hit rates though thanks to data warehouse properties.
+    - Consistent hashing for ephemeral cache between virtual warehouse nodes. Each of the VWs talk to each other, so they kind of share a global set of ephemeral memory. This is built on top of the larger, persistent storage but is much lower-latency. Generally the ephemeral storage has a hierarchy of {in-memory, SSD, S3} although spilling to object storage is not ideal.
