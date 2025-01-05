@@ -1,0 +1,13 @@
+- Sorting implementations — [[June 30th, 2024]]
+    - ipnsort and driftsort
+    - Prior-work on pattern-defeating quicksort (pdqsort).
+    - Lessons: You can get pretty good performance with architecture-independent code, even if maximizing CPU features would give you maximum performance. Benchmark all the possible cases you can think about, holistically evaluate regressions & improvements. Allow theoretical analyses to guide practical performance tuning and weighing tradeoffs.
+    - For ipnsort, the benchmarks come from very similar distributions compared to driftsort. Methodology is primarily based on relative speed graphs by size range.
+    - There are 11 people here now, plus Nathan and his two friends just stopping by.
+    - Focusing on wide out-of-order execution rather than SIMD / vectorization may offer more portable binaries; it's a valid alternative method of cranking out performance.
+    - A lot of the authors' contributions are novel performance analyses. This is hard!
+    - `cmov`: Branchless swap / move instruction, used by the "smallsort" sorting networks. Converts control dependencies into data dependencies, depends on the use case.
+    - Hardware parameters affect the constants in this implementations.
+    - VLIW was mentioned by a group member as an alternative hardware architecture.
+    - Branchless Lomuto partitions describe yet another paper with quite entertaining analysis. Conditional moves make it possible to generate more optimized code for Lomuto, vs Hoare. Cyclic permutations is another trick to avoid the copy-overhead of swaps.
+    - Branchless Lomuto partitioning: https://orlp.net/blog/branchless-lomuto-partitioning/
