@@ -1,0 +1,11 @@
+- Memory allocation — [[April 21st, 2024]]
+    - External vs internal fragmentation
+    - jemalloc: size classes are small {tiny, quantum-spaced (n*16 B), sub-page (1 KiB), large (4 KiB), huge (2 MiB)} and handled differently.
+    - Each 2 MiB chunk is either an __arena__ or a "huge" region.
+    - Arenas are shared between threads, using 4x the number of threads to avoid performance issues due to mutex contention during OS preemption.
+    - There is a "current" run for each size class. Size of a run affects external fragmentation.
+    - Hysteresis based on the __fullness quartile__ of each run to determine deletion.
+    - __Cache lines__ are the minimum chunk of data that can be concurrently written to by each processor. If two processors try to access the same cache line (usually 64 B, 128 B on M1 processors) concurrently, then they fight over ownership.
+    - How does thread-local storage work? It's essential for storing arena IDs efficiently. Why do some architectures not support it?
+    - How does the allocator use sbrk / mmap? They both return a pointer to a huge memory region, and the allocator divides that up into smaller regions. The allocator then builds on top of that, returning a pointer from that region back to the user.
+    - How is jemalloc different today, 14 years later? "Allocator design and implementation has strong potential as the subject of career-long obsession, and indeed there are people who focus on this subject."
