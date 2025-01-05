@@ -1,0 +1,19 @@
+- Memory models — [[June 23rd, 2024]]
+    - Looks like memory models can be quite confusing on the hardware level, so we rely on shortcuts to reason about their correctness and sequential consistency as programmers. Intel's TSO model reads similar to the __casual consistency__ model of Jepsen, which is a cool connection. __Store buffering__ is a relevant word to remember here.
+    - ARM/POWER has a very relaxed memory model, but the key thing to remember is that writes to a single memory location are totally ordered. Reads might be reordered though, and processors don't necessarily agree about the order of writes to different locations.
+    - The answer is to say hardware is __weakly ordered__ respect to a consistency model. This gives us a blueprint for how to write programs that behave as if sequentially consistent.
+        - Adve and Hill (DRF-SC) was a turning point; it gave a blueprint for hardware to appear consistent, at least for the needs of programmers working with it (or compiler engineers who are generating instructions).
+    - Programming language memory models are an entirely different interface. The language engineer offers a memory model to the programmer, then they implement it in hardware according to the provisions of that architecture.
+        - Java (1996) had issues: coherence was too strict, non-synchronizing atomics too loose.
+        - Java (2004) synchronized around creating threads, locking mutexes, writing to volatile variables. It also defines semantics for data races. This doesn't fully describe things though, and it's not even clear that mutexes guarantee mutual exclusion on variable updates.
+    - “Inspired by the apparent success of Java's new memory model, many of the same people set out to define a similar memory model for C++, eventually adopted in C++11.”
+        - C++ is very complicated, with three types of atomics (seqcst, acq/rel coherence, relaxed).
+        - It is more complicated than Java, and apparently less helpful than Java?
+        - Data races are undefined behavior. DRF-SC or Catch Fire.
+        - Russ Cox keeps using the phrase "we should aim higher" and I feel like that comes from a place of frustration with existing languages. Re-executing loads is part of that.
+        - Acquire-release means that there is a happens-before edge, i.e., coherence. These are free on x86-64, but on ARM64 the best way to implement them is as sequential consistency anyway, so the abstraction is a bit leaky.
+    - Historical note is that today, modern hardware is very good at supporting sequentially-consistent synchronizing atomics, since they adapted to programming languages. Previously, it would require expensive barriers. (ldar/stlr in ARM)
+    - JavaScript's memory model for SharedArrayBuffer is equally tricky. Only sequential consistency is implemented, but there are still incompatibilities with UB on ARM.
+    - Acquire / Release semantics can also be defined by LoadStore / StoreLoad / StoreStore fences. This is complicated. But Russ Cox omits this detail. The point is that C++ has synchronizing atomics.
+    - “I conclude that there are two ways of constructing a software design: One way is to make it so simple that there are __obviously__ no deficiencies and the other way is to make it so complicated that there are no __obvious__ deficiencies.” –Tony Hoare
+    - Go's model has sequentially consistent atomics, and happens-before edges on runtime data structures. It also specifies disallowed compiler optimizations. That's all!
