@@ -1,0 +1,14 @@
+- AOSA, Volume 1 — [[April 28th, 2024]]
+    - Themes are listed below.
+    - Audacity: Plugin systems, performance impedance mismatch between threads / buffers, GUI frameworks, decoupling application logic from systems, data structures.
+        - GUI frameworks today are quite different, likely due to the influence of React.
+    - Bash: Standardization and backward-compatibility, behavior edge cases, parser considerations, weaker types allowing for a more dynamic language (static and dynamic tension), code being affected by historical changes (Unicode), lack of community dev involvement.
+        - Related projects: How does it compare to Powershell? More structured, object-oriented. Perhaps stricter and more cumbersome.
+        - Lisp is similarly dynamic, with self-modifying code. But a lot less popular, likely because of the difference in domain. Interactive exploration tends towards dynamic languages.
+        - "It's up to the author to just write a readable script."
+    - CMake: Unifying two build systems, cross-platform identity versus behavior, portabillity, embedded scripting language for build systems, scope and success/failure of various integrated components (analysis, tests, plugins).
+        - Example from Alex: Uses CMake at work, has a common macro system to develop their own DSL for compiling C++ libraries and executables, specifying dependencies.
+    - HDFS: Focusing on networking considerations with topology / racks, fault-tolerant replication, control (NameNode) and data separation, daemons to balance utilization and fix corruption, tuning many time/storage/ratio/replication parameters by human operators, "fat client."
+        - Someone at group: Used HDFS via a deployment on Kubernetes, and queried the NameNode for file locations so they could colocate jobs on pods that had that data.
+    - LLVM: Code reuse for compiler projects (extensibility / cleanness), "peephole" optimization, fully-specified intermediate representations, infrastructure as libraries instead of an app, tests as a first-class language representation, modularity allows replacement and contribution.
+        - Mentions MLIR, should we read about it? Look at GPU / FPGA support.
