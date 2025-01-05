@@ -1,0 +1,34 @@
+- CRUSH and RADOS — [[May 12th, 2024]]
+    - CRUSH is a hierarchical data placement function. You just need a schematic, weighted tree of buckets in order to determine placement.
+        - Summary: CRUSH is hierarchical RUSH, with additional bucket types & overload flags.
+        - The requester can choose its hierarchy, as well as the placement spec for how replicas should be laid out. Reorganization happens when new nodes are added or removed, and you can also mark a node as overloaded to offland data stochastically.
+        - Compare to distributed hashing algorithms:
+            - Cassandra has a single level of ring-based hashing. But to rebalance, it just divides the most heavily weighted node's work in half.
+            - Chord is P2P and also has no centralized service, but it's more of a distributed communication algorithm computing the membership of a ring. CRUSH needs to know the membership ahead of time, so it's not meant for instances to join and leave often.
+            - CRUSH is interesting because it's focused on hierarchical data placement.
+            - Also, it guarantees equal-probability data balance, whereas ring hashing would have different probabilities even for adjacent nodes in the ring. For ring hashing, the variance is proportional to the number of __nodes__, but CRUSH's variance is proportional to the number of __objects__.
+        - For large amounts of data, it's approximated by a geometric distribution, sigma ~ Sqrt(mu).
+        - Four different types of buckets in the hierarchy with placement algorithms:
+            - Uniform: h(x) % p
+            - List: repeated hashing, h(x, i) / H_MAX < (bucket_weights[0]) / sum(bucket_weights) — mathematically optimal reorganization efficiency (RUSH_P)
+            - Tree: like a list, but you only need to update probabilities for stuff gradually going up to the root, so it's O(log n) time to add/remove (RUSH_T)
+            - Straw: draw a straw for every bucket, pick the bucket with the largest straw
+        - Remember that Ceph has a top-level hierarchy of nodes, so the bucket type used by each individual node doesn't matter as much, or it's really just a small constant factor. There's +2-4x data reshuffling factor penalty from the multi-level hierarchy anyway.
+            - I guess bucket type doesn't __really matter__ at all, but it's something to consider for an academic paper when you consider and evaluate all the options.
+            - This analysis justifies having a map / hierarchy anyway.
+        - I love how this paper balances practical and theoretical aspects. They do a rigid theoretical analysis, but then you always need to ask: how does this translate to actual operational system improvement? Is it relevant, or does it help actually balance the problem?
+        - Cool that it models a physical infrastructure via general math. But even the questions we ask are bent towards the domain problem being solved. It's a real systems problem!
+    - RADOS is the object storage layer built on top of CRUSH. The idea is to distribute the control plane onto the storage nodes, without a controller.
+        - Summary: RADOS is an object store. Files are grouped into placement groups, which are then assigned to several replicated ODS with CRUSH. A monitor cluster replicated with Paxos is tasked with failure detection and propagating the cluster map.
+        - Keys are sharded into 2^k placement groups, which are then assigned via CRUsH. Reminds me of the Redis Cluster sharding algorithm.
+        - Primary-copy, chain, and hybrid "splay" replication for reader / writer consistency.
+        - Shuffle the number of placement groups proportional to the number of nodes. Maybe you'll want around 100 placement groups per node, since the variance is inversely proportional to the number of placement groups. For instance, if you want like +-10% load on average, then you'll need 100n (asymptotically, times some constant).
+        - Each OSD is in {up, down} or {out, in} state. The storage maps are updated by the controllers via Paxos epochs, and then they gossip between the machines lazily in O(log n) time. Messages are tagged with the sender's version.
+        - Data migration is also distributed, and it's driven through peering by the first OSD in the placement group, which becomes a __replica__ or a __stray__.
+        - This means that rebalancing only requires that every node checks ~O(100) PGs.
+        - Nitty gritty details about replication and its relationship with cluster rebalancing.
+        - Note: No consideration for parallel reads at this level, or breaking files up into chunks to expand past the throughput of a single machine.
+        - Unanswered question about garbage collection of junk if the write fails in the middle due to a cluster reorganization that makes an OSD no longer the primary.
+        - Failure recovery is handled by the new primary of the PG. It recovers from the old replicas.
+        - Note: RADOS writes support PUT operations as well as appends, this detail is left out. In general, it depends on whichever mutations you support.
+        - A lot of further work is dedicated to snapshotting, GFS-like queues, better load balancing and ECC redundancy, and so on. Fine-tuning the general object store and exploring different avenues for customization.
