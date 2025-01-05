@@ -1,0 +1,38 @@
+- Time Series Databases — [[November 12th, 2023]]
+    - Scenario: So you want to store a time series
+        - slow-folder/ (disk drives)
+            - ++ 2023-01-01.txt.gz
+        - fast-folder/ (fast SSD)
+            - -- 2023-01-01.txt.gz
+            - 2023-01-02.txt.gz
+            - ..
+            - 2023-01-31.txt.gz
+            - 2023-02-01.txt.gz
+        - indices/
+            - January/
+                - rolled-up-2023-01.txt.gz — __indexed by some column__
+            - February/
+    - Queries: Filter by Tractor_Brand = Toyota
+        - Speed for a __specific day__ versus columns over __long date ranges__
+    - Finance
+        - January-ETFs.csv
+        - January-ETFs-fine-grained-trades.csv
+        - January-entire-market.csv
+    - What data are you storing?
+        - Enum values (integer values)
+        - Floating-point / numeric data
+        - Logs? Probably.
+            - Indices might look different
+            - Storage format?
+        - Images and videos, perhaps
+            - Links / IDs to external storage
+            - String "vi-123456-on-january-23.mov"
+    - **Defined in terms of the __access pattern__ over the data.**
+        - OLAP
+        - Looking at data in the past, not necessarily by recently
+        - Lots of data
+        - Don't need 1ms latency, maybe 100ms, 1s, 5s, 10s, …?
+    - Prometheus:
+        - System for scraping, storing, and backing up metrics
+        - Make queries via a web UI, and install special query "rules" that trigger alerts (email, text message)
+        - Alternatives: Splunk(?)
