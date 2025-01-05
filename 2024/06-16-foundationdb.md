@@ -1,0 +1,10 @@
+- FoundationDB — [[June 16th, 2024]]
+    - Control plane and data plane. Notable feature is that there is __exactly one sequencer__ (HLC service) across the entire cluster, and this is used to get read / commit sequence numbers for all transactions, regardless of their origin.
+    - Paxos control plane recruits three singletons: Sequencer, DataDistributor, and Ratekeeper.
+    - Transactions through MVCC + OCC, keeping track of conflicts between read & write sets.
+    - Reconfigures the system through heartbeats to the control plane, ensuring that it can recover from failures in a few seconds of up to f nodes out of f+1.
+    - Transaction -> Log -> Storage. A commit is rejected if there are overlapping changes in the sequence number range [read time, commit time]. To avoid racing commits, the resolvers send the changes to log servers, which then ensure that no commits are applied while earlier commits are still outstanding.
+    - Very strong simulation testing makes them confident in the reliability / correctness.
+    - Serializable snapshot isolation is guaranteed by checking read sets against write sets. Basically, the read set is compared against all writes concurrent with the transaction. This guarantees strict serializable execution. This is done using a __lastCommit__ skip-list over the entire keyspace, and checking if lastCommit(...) for any transaction interval comes after the read.
+    - Basically, FoundationDB decouples the control plane from the data plane, in database form. The resolver and log servers are split up into separate services.
+    - Real innovation in FDB could be seen in its robust testing infrastructure. See blog post from James Baker on Project Loom, and the Antithesis spinoff company that focuses on robust testing, who is organizing a conference in NYC soon.
