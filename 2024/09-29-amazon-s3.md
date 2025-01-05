@@ -1,0 +1,41 @@
+- Amazon S3 — [[September 29th, 2024]]
+    - "S3 is effectively a living, breathing organism. Everything, from developers writing code running next to the hard disks at the bottom of the software stack, to technicians installing new racks of storage capacity in our data centers, to customers tuning applications for performance, everything is one single, continuously evolving system. S3’s customers aren’t buying software, they are buying a service and they expect the experience of using that service to be continuously, predictably fantastic."
+    - I feel that, some systems are built to be continuously monitored rather than engineered for zero-touch correctness from the start. It's the interplay between human operators and computer programs that lets us produce fantastically efficient software.
+    - “… managing and balancing I/O demand across a really large set of hard drives. In S3, we refer to that problem as __heat management__.”
+    - “So, with aggregation flattening the overall demand distribution, we need to take this relatively smooth demand rate and translate it into a __similarly smooth level of demand__ across all of our disks, balancing the heat of each workload”
+        - Note to self: If you have a few heavy-hitting customers though, like at [[Modal]], they could indeed affect aggregate load. So this is important to design for as well.
+    - Intentionally place different objects on different sets of drives so that they cannot interfere with each other, and so they are a small % of each disk. No hotspots.
+    - On scale and aggregate workloads: “building at this scale means that any one of those individual workloads is able to burst to a level of performance that just wouldn’t be practical to build if they were building without this scale.“
+        - Benefits of scale: **Distribute the hardware across a lot of users.**
+    - Using techniques like formal verification to allow engineers to __move faster and be more confident__. This kind of argument makes sense for very large, complex systems.
+        - Traditions to raise quality, hold each other accountable as a team.
+    - Services are not just the software. They have owners. Pushing on something and driving it to completion, setting a bar for quality. But also offering a service for others—which is important since at scale, nothing you do operates in a vacuum.
+        - in dialogue w/ Kunda's tech culture.
+        - American culture: professionals = "independent thinkers;" have __self__
+    - “But ultimately, my most successful research projects were never mine. They were my students and I was lucky to be involved.”
+    - 1 IOPS per 2 TB of data stored, why this ratio? Probably because __load is balanced out__.
+        - Note that random HDD reads are 100,000x slower than sequential, and random SSD reads are 10,000x slower than sequential.
+        - Sequential reads are just as fast in either case though, approaching RAM speeds.
+    - S3 has no built-in caching! It has storage tiers though.
+    - Taking a break now, what a nice reading. Seems like people have mostly formed groups and are chatting during the break now, except a few people on the sides who are just reading or working. I get it though, socializing can be kind of tiring sometimes.
+    - "Lightweight" formal verification that's easy to keep updated by non-experts.
+        - Reference models for each part of the system (LSM -> Hash Map), 1% of total code.
+        - Property-based testing & model checking between each component and its reference model, which allows you to determine correct, consistent behavior.
+    - ShardStore maps shard IDs (metadata) to shards of customer object data.
+        - LSM tree with shard data stored out-of-tree. Takes shard ID -> list of __chunks__, where each is stored within an __extent__.
+        - Writes to an extent should be sequential. Separate reset operation returns to start.
+        - Chunk store abstraction is PUT(data)->locator and GET(locator)->data, like blobnet.
+    - “It was only when we discussed long-term maintenance implications with the team that we realized writing the models themselves in Rust was a much better choice, and even later when we realized the reference models could serve double duty as mocks for unit testing.”
+        - Formal methods rely on some domain knowledge, not just pure fuzzing.
+        - Other domain knowledge: types of I/O failures, executable reference model.
+        - "It doesn't seem very formal at all." Or is it?
+        - Key idea: Modeling out their system simply, check implementation against it, make it a mock in the same language to validate correctness. Compare it in unit tests so it stays in sync, even across frequent changes.
+        - Key idea 2: ShardStore architecture. There's a garbage collector! Almost looks kind of like an LSM-based file system, with multiple levels / tiers.
+            - "Soft updates" = dependency graph, comes from past work.
+            - `fn append(&self, ..., dep: Dependency) -> Dependency` is the _only_ way to write to disk! Used in FFS, compare with journal-based file systems.
+            - This avoids corruption on crash.
+            - Maybe it would help Amazon roll out new hardware.
+        - Key idea 3: Handing things off to non-formal methods experts.
+            - Currently 18% of the lines, means people are editing it. Good enough, maybe they hit the model mostly correct from the start.
+            - Currently hundreds of petabytes, ~0.1% of all customer data. (In 2021. Which subset?)
+            - The shuttle model checker simulates threads, chooses ordering.
