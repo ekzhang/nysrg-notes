@@ -1,0 +1,43 @@
+- Media codecs — [[January 21st, 2024]]
+    - Audio
+        - Sequence of very fast "samples"
+        - What is a sample? Measuring the __physical movement__ of the speaker over time!
+        - Bit rate = amount of data per second
+        - VBR = strategy, change bit rate automatically to match quality, so silence has less bits, noise has many bits
+            - Relevant for __lossy__ codecs, ~ compression level
+        - Why do we need multiple channels?
+            - 1 = mono (one channel)
+            - 2 = stereo (two ears, headphones) + center?
+            - more than 2 = speaker systems? or locations in space?
+            - standard is 5.1
+            - Dolby Atmos — speaker system can simulate an abstract directional space
+            - can also have dubs / translations in channels
+        - Latency number? — compression buffer / chunk size based on time / bitrate
+        - (32-bit PCM standard in Ableton)
+        - Each sample is a integer / floating-point
+        - Formats are important! __gapless looping__
+        - For most media work (video editing, game dev) — most tools will standardize all audio imports.
+    - "Falsehoods about distributed systems that programmers believe"
+        - You might meet these in your life
+            - Time only goes forward
+            - There are 365 days in a year
+        - You will not meet this in your life
+            - Media is nasty? — let's sacrifice ourselves to learning about this
+            - What is video
+                - Images through time
+                    - What is color
+            - What is audio
+                - Muxed / demuxed
+                - PCM
+                - Bitrate
+                - Sample rate
+            - ~~What is infinity~~
+            - Encoding, transcoding
+                - Performance in implementation / energy-efficiency
+    - Compare different formats
+        - AV1 — "hot" format
+        - VP8/VP9 — also open-source, possibly related to AV1
+        - H.265 vs H.264 — both by the MPEG industry group
+    - Licensing and compatibility issues?
+        - What software / hardware do you need in order to support a codec
+        - Who do you need to pay money to
