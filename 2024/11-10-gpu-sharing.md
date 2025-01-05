@@ -1,0 +1,31 @@
+- GPU sharing — [[November 10th, 2024]]
+    - Hosted by Rene Ravanan. There are 17 people today.
+    - Start by refreshing on hardware fundamentals: what is a GPU, and what is a CPU? The graphics units have a lot of small cores. Thread blocks and grids. Each block is run by a streaming multiprocessor and can read from shared memory (L1 cache).
+    - CUDA is the industry standard. Why not GLSL, WGSL, Vulkan, …? Unclear, seems like Nvidia has thoroughly optimized their stack.
+    - Even if you oversubscribe a GPU, an SM only runs one application at a time. So multiple applications on a GPU (e.g. Chrome, plus a game) would submit kernels for evaluation every so often, but they can just use however many SMs they need.
+    - __Timeslicing__ is enabled on default on Nvidia GPUs. Allows for context switching every couple milliseconds — this is slow since register files are large (lots of cores).
+    - CUDA streams allow you to submit jobs to the kernel asynchronously. Compare to the WebGPU API for instance, in `dispatchWorkgroups()`.
+        - MPS (multi-process sharing) allows different apps to overlap kernel / memcpy ops on a GPU. Helps increase utilization. By default, kernels from only one application can run on a GPU concurrently. Other applications wait. MPS improves concurrency. This allows multiple applications to __submit kernels__ at the same time, not just time slicing.
+        - This is a setting on your GPU, by default applications get exclusive access to the entire device. So it can use all of its memory, SMs, etc.
+    - MIG = isolated mini-GPUs, resource contention doesn't affect applications. But this is fixed partitioning, you don't get dynamic sharing.
+    - Isn't it weird that MPS needs to exist? If you had two different streams in an application, they would already do this. Why would different applications synchronize as the default behavior, by sending things onto the global "default stream"?
+    - The graphics driver groups the requests from applications, and typically they can figure out how to then allocate device time then. "One application" — why don't they share SMs?
+    - GPUs have memory protection.
+    - **Modern alternatives to MPS:** TGS = temporal sharing, REEF = spatial sharing. Overall theme is that they divide applications by priority. If you have a production task that doesn't use the GPU fully, maybe you can try filling in the gaps with other workloads.
+    - TGS (NSDI '23)
+        - "It ensures that __production jobs__ are not greatly affected by __opportunistic jobs__ on shared GPUs."
+        - Integrated with Docker and Kubernetes, meant for container usage.
+        - Opportunistic jobs can run on spare resources. Lower priority than production jobs. They can only use leftover resources at any given time.
+        - Transparency means that they intercept system calls from containers to GPUs, then isolates the production job from contention compared to the opportunistic one.
+        - Memory oversubscription: "MPS fails when the total GPU memory required by containers exceeds the GPU memory size." TGS handles memory swapping underneath and prioritizes the memory of production jobs.
+        - As good as AntMan, but transparent.
+        - Adaptive rate control: throttle dequeuing opportunistic kernels based on the __arrival rate__ of production kernels(!) Like TCP congestion control. This might be ok for a homogeneous deep learning training job, but I'm not sure about it being a general solution?
+        - Benchmarked on training two deep learning models at the same time. You get to squeeze in extra compute for free, while the main model isn't at 100% capacity!
+    - REEF (OSDI '22)
+        - Since kernels are idempotent, just preempt them and retry later.
+        - Using "offline profiling in advance" it can pad a workload with pending best-effort kernels to achieve optimal utilization.
+        - Not transparent. Hooks into a fork of TVM, the ML compiler framework. Code transformer adds a __preemption flag__ to lazily evict the kernel (kind of like a kill switch), and a set of __proxy kernels__ that are compiled for different register counts.
+        - Register file size on each CU is 256 KB. State-saving is expensive!
+        - Maybe you should have an OS scheduler instead? "SM stealing."
+        - Can concurrently execute the real-time task with opportunistic tasks, on the same SM! So that's why they need the register allocation system. It's not like TGS, where they run in the gaps between kernel runs.
+        - Assumes that you don't oversubscribe GPU memory!
