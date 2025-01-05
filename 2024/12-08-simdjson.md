@@ -1,0 +1,34 @@
+- simdjson — [[December 8th, 2024]]
+    - Specific contributions of the paper center around using SIMD to do tricky tasks. Validating UTF-8, detecting quoted strings with escape sequences; ranges of code point values. vpcmpeqb
+    - Mison architecture, compared against. simdjson also does validation.
+    - Instead of a common top-down recursive descent parser, going one character at a time, they use a multi-stage SIMD architecture.
+        - Stage 1: Validate UTF-8 and find starting location of every primitive. Like tokenization. Also figure out where strings are escaped.
+        - Stage 2: Convert into a linear __tape__ of primitive values and arrays/objects. Parse bools, string escape sequences -> normalized UTF-8, and floating-point literals.
+        - Returns a validation result (error code) and tape.
+    - The parts of stage 1
+        - Identifying quoted strings depends on escape sequences. An even number of backslashes cancels itself out.
+        - simdjson works with bitvectors of locations of characters.
+        - To find positions __in between quotes__ (i.e., strings), we take the unescaped quotes and do a prefix sum over all of the bits. This is a pclmulqdq (carryless multiplication) with -1.
+        - UTF-8 validation can also be SIMD. Look at the top nibbles.
+        - "Error variable" is a 32-bit uint. If there are any errors, we bitwise or it with the variable.
+        - Question: How to handle dependencies between chunks efficiently? The last character of the previous chunk affects the next chunk. Have to read the code to find out.
+        - Figure shows example of branchless code to detect odd-length sequences of backslashes. It uses 15 instructions in total.
+        - Outside of UTF-8 strings, all JSON characters must be ASCII. But there might be many strings. So the authors just validate the whole chunk of text as UTF-8 all at once, to have a more consistent performance profile. Uses vpshufb to detect continuations.
+    - The parts of stage 2 (tape)
+        - To handle nested arrays and objects, they use a stack / "goto" state machine.
+        - When there are "at least 8 digits" in the fractional part (i.e., a lot), they switch to a vectorized number parser. Otherwise they just do character-by-character.
+    - `vpshufb`: vectorized table lookup, and it lets you do two table lookups on the low4 bits of every character, used for testing character classes! Ori thinks this is a big part of the magic. You need to set up a 16-byte table first. Composes well with bitshifts.
+    - Do they do an ablation study? How much is from SIMD, versus vector comparison, etc?
+    - How does this generalize to other architectures? Are the instructions the same, or analogous for other architectures. Ordering the instructions matters too, pipelining / reducing data dependencies is inherent here.
+    - Question: Does this library support streaming? (Ori) Everything they're doing seems like it wouldn't work unless the JSON was in RAM.
+    - Right now stage 1 is done before stage 2. They could interleave the processes in the future. Also, stage 1 could use multi-threading, since it only requires local knowledge and doesn't build a tape. In both cases it requires in-memory data though.
+    - __simdjson is slower than memory bandwidth__ of the hardware, so it seems like we still have speed even with large files bigger than the L2 cache size.
+    - Note: They only test up to 80 MB. So "gigabytes per second" may be a bit unintuitive.
+    - Code reading
+        - "inl" header files are inline
+        - Main high-level passes are in the src folder, but most of the code is implemented in the include folder in headers. "Structural indexes" is an array of uint32_t.
+        - Data-driven architecture. Buffers are passed around between different objects.
+        - To manage complexity, different step sizes are placed into a const generic. The functions behave as if you stepped with a different constant value, but using the bigger step size might be preferable for speed. (Longer strides.)
+        - Some comments in the generic folder mention specific architectures. They use template programming to enable specific layout optimizations. Arm64 ISA has a leading versus trailing zero operation, so you may reverse the bits.
+        - Example of a function different between microarchitectures: [parse_eight_digit_unrolled](https://github.com/search?q=repo%3Asimdjson%2Fsimdjson+%22uint32_t+parse_eight_digits_unrolled%28%22&type=code). Especially cool that the generic one is also used in ARM64, uses SWAR.
+        - Note about C++ programming, the comment about reinterpret_cast being unsafe is because it's technically undefined behavior to have two type aliases pointing to the same memory location. C++20 introduces bit_cast for this.
