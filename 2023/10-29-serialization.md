@@ -1,0 +1,94 @@
+- Serialization — [[October 29th, 2023]]
+    - What is serialization? (Setting)
+        - **Take object state (complex) and convert it into a sequence of bytes**
+            - Why bytes? Why not bits? (not sure?)
+        - Microservices: distributed systems are more common, require more communication
+            - Traditionally: Sharing memory, data structures (pointers)
+    - Goals
+        - Save space (compact data serialization)
+            - "Space" — serialization over the wire, bandwidth
+            - Disk storage
+        - Speed
+            - Fast — high throughput (~GB/s)
+            - Less CPU usage (compression requires a lot of CPU)
+        - Simplicity
+            - Very complex formats re difficult for programmers to use
+            - `{"name": "Eric"}`
+            - `<xml:person id="3"><name>Eric</name></xml:person>`
+            - `<xml:person id="3"><name>Eric</name><name>Eric2</name></xml:person>`
+        - Flexibility
+            - Represent all the data types — how rich
+                - List[K]
+                - Map[K, V]
+                - HashList[K] — unclear? performance optimization?
+                - Mutex — ???? probably not
+                - TCP socket — definitely not, unless…
+                - `volatile`
+            - (Should we represent boolean?)
+            - (Should we represent u32?)
+            - (Should we represent u128?)
+            - (Should we represent u2048?)
+            - (Should we represent GF256?)
+    - Schemaful vs non-schemaful
+        - **Schemaful:**
+            - Versions of the format may change, don't break protocol (relevant for over-the-wire)
+            - Better type safety
+            - Efficiency
+            - Protobuf, Thrift, Kiwi, Cap'n Proto, Arrow
+        - **Non-schemaful:**
+            - JSON, XML, MessagePack, CBOR, YAML, TOML
+            - Quicker to work with, don't need to write a schema
+    - What does a serialization language / library data format look like?
+        - `POST /new-user {"fullName": "Eric"}`
+        - `POST /new-user [1: "Eric"]`
+    - Encode Protobuf over the wire:
+        - Marker
+            - String/Bytes = 1 [1 byte] + Length [varint]
+            - Int32 = 2 [1 byte]
+            - Bool = 3 [1 byte]
+            - ...
+        - Variable length int
+            - 0xxxxxxx — literally 0..127
+            - 1xxxxxxx 0xxxxxxx — next 2^14 values
+            - 1xxxxxxx 1xxxxxxx 0xxxxxxxx — next 2^21 values
+        - ```javascript
+          message SearchRequest {
+            string query = 1;
+            int32 page_number = 2;
+            int32 results_per_page = 3;
+            // can't add new fields, can't remove fields
+            int32 results_per_page_new_version = 4;
+          }
+          ```
+            - Go in order. No gaps in the field numbers allowed.
+            - query: `01 04 45 72 69 64`
+            - page_number: `02 00 00 00 07`
+                - variant? `02 07` — if most of the numbers are small, use varint because it's cheaper
+                - but it might be 5 bytes if all of them are big, so that's like ~25% worse, and might be slower, use more CPU
+            - results_per_page: `02 00 00 00 C8`
+            - `[01] 04 45 72 69 64 [02] 00 00 00 07 [02] 00 00 00 C8` — 12 B!
+            - We don't have to encode the type!
+                - 9 B — without type descriptors
+                - Deserializer is hardcoded for this schema. Yes.
+    - **Protobuf**
+        - {Tag, Value} pairs
+            - Tag = field number (the rest of the bits) + "wire type" (3 bits)
+            - Wire Types = Varint, Fixed32, Fixed64, Byte sequence
+        - Endianness
+            - `0x01020304` -> `[0x04, 0x03, 0x02, 0x01]` — little endian
+            - `0x01020304` -> `[0x01, 0x02, 0x03, 0x04]` — big endian
+        - Network Byte Order = Big endian
+        - Compression — LZMA — detect duplicate sequences?
+        - Bit-level? 3 bit tags instead of 8 bits
+    - `<M1><M2><M3>`
+    - `[*M1][*M2][*M3]...[M1][M2][M3]`
+    - `repeated string x = 1;`
+    - **Cap'n Proto**
+        - __Infinitely faster__
+        - The deserialization is zero-cost, in the sense that there is no copying or dynamic allocation
+        - If you have a buffer of bytes, you can access any part of that buffer without parsing the entire message and loading into memory
+        - Embedded or real-time systems
+        - Inter-process communication (sharing memory is free!)
+        - Struct pointers are less memory efficient but necessary to encode this complexity
+        - Cap'n Proto hijacks the language's in-memory representation of its data, since there's no separate serialization step
+        - CPU versus network ratio
