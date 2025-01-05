@@ -1,0 +1,28 @@
+- CRDTs and distributed replication (Jan 2025)
+    - [Zero](https://zero.rocicorp.dev/docs/writing-data) is a cool new offering from Replicache, and they seem to have attracted some attention. But their branding seems to fall in the Convex trap. A lot of big talk, not as much concrete argument for why it improves developer flow.
+        - The basic advantage is that you get automatic __optimistic updates__.
+        - Yes, it is cool technology. My understand is that it's a differential dataflow query engine, replicated on both the client and server, with streaming updates. So you can not just get point data like Firebase, but also replicate query results in a differential manner. (Why do you want to do this? I think it just allows you to program __exact__ optimistic updates to complex queries.)
+        - Zero only makes sense if you want a scalable read-write workflow with complex distributed queries. And optimistic UI updates. (Even then, if the optimistic revalidation is easy to implement by hand with SWR / useOptimistic, that seems better?)
+        - You pay a lot of technical cost: separately deploy and scale a change replication database in addition to the main database, learning a new materialized query language (not SQL).
+        - Unclear how to measure performance. In a large table, a lack of proper index could result in massive change sets. In ordinary SQL, you would just EXPLAIN ANALYZE it. But for this dataflow system, it's much harder to debug what's going wrong.
+        - Electric SQL is a cache / similar idea to One.
+        - I've been reading this for a while, but I think it's really not compelling. When we partially replicate the database into the browser, there are so many sacrifices. It feels like creating an inefficient system then trying to muscle your way into tractability. Just simplify your query model to allow for optimistic updates (Firebase), or write the optimistic update yourself — don't fight nature.
+    - [One](https://onestack.dev/) is another hyped up devtool. (Idk if it's good though.) Why are they rewriting Next.js and using Zero? Maybe plugging in Expo helps.
+        - In principle I'm not sure if having shared codebases for web and native apps really makes sense. These should have different paradigms of interaction.
+        - Flutter tried it, they aren't doing so well.
+    - [pglite](https://electric-sql.com/product/pglite) has utility outside of the streaming replication, since they put a database in the browser. Could be useful as a simple interpreter for SQL.
+        - Maybe build a Postgres query explainer / education tool like regexper.com with it?
+        - Or you could use it in browser notebooks like Observable. In that case DuckDB or Polars might be better though; they're built for OLAP.
+    - CR-SQLite and OrbitDB are comparable replication algorithms for databases. But OrbitDB is cryptographic and decentralized, while CR-SQLite is traditional. (Redis Enterprise does the same thing as CR-SQLite, but it's closed-source. No good docs.)
+        - How does CR-SQLite maintain a CRDT for database tables? I guess you do LWW by row ID. But what about schema updates + transactions? Hmm…
+        - Also curious how they support rich text, will need to read more about it.
+    - Note on CRDT algorithms: RGA is isomorphic to a __causal tree__. (This makes sense!)
+    - How to resolve conflicts, for example in git merge? For source code, like having separate agents modifying the same codebase. Some innovations like [diifftastic](https://github.com/Wilfred/difftastic), syntax-aware diff might be able to apply changes better.
+        - Or you could… ask the AI how to resolve the merge conflict? :D
+        - I guess there's unlimited options there. Perhaps it could even speed up code editing at scale with these agentic flows. (But it's very expensive atm.)
+    - There are competing ideas / no consensus about OT vs CRDT for collaborative editing. OT has been simple and understandable for along time, especially for client-server applications. (Which is the vast majority of software today.) But the people at Zed like CRDTs, and eg-walker is recent research making them much simpler / faster.
+        - I guess CRDTs enable true p2p collaborative editing, could be nice. But in most practical scenarios you do have some "primary" that can handle the OT state.
+        - For instance, to make a collaborative Jupyter notebook, you probably want one person to actually be running the code / or at least to own the remote kernel connection, and also to save the file on their disk. This peer is privileged and can run the OT.
+        - A code editing session also probably has one "host," they can order the OT.
+        - Full p2p connections require O(n^2) edges too. You could use Chord but that adds complexity again.
+        - Idk maybe I'll explore CRDTs as a core data structure, but I have not super high expectations. Can try seeing what comes out of it. Can it plug into state management frameworks like Zustand / the idea of a reactive Solid.js store? That might be convincing.
