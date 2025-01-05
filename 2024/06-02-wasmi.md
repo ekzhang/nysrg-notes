@@ -1,0 +1,12 @@
+- Wasmi — [[June 2nd, 2024]]
+    - 12 people
+    - Main ideas from the original Wasmi article: There are two main categories of Wasm workloads, translation and compute. New execution engine balances translation and validation and is good for translation-intensive workloads. Might be 5-20x slower for heavy compute though.
+    - __"You have to pick the runtime based on what type of code you want to run."__
+    - There is an experimental WASM C-API for running WebAssembly and instantiating all of its external functions within a C calling convention, rather than a browser.
+    - Wasmi relies on a new register-based IR, which is more performant than stack machines.
+    - Difference between Wasmi — there's no actual "JMP" into the translated program.
+    - Core is the "engine" while the rest of the package is various features like linear memory and tables and module loading, as well as external functions.
+    - Relatively easy to read this code. Written by 2 people.
+    - Engine takes a module/ as input and sends it into translator -> bytecode -> executor.
+    - Translator produces a __virtual__ value stack or trace while the wasm source code is being visited. Each instruction modifies the virtual value and control stacks. Constants are folded, and other operations are converted into register indices.
+    - Register allocation is handled through several regions: inputs, locals, dynamics, and preservation. There is a defragmentation step at the end that makes all registers for a function contiguous.
