@@ -1,0 +1,21 @@
+- Garbage collection — [[September 1st, 2024]]
+    - Garbage-First (G1): Concurrent, thread-local allocation buffers, with a soft real-time requirement and completeness. Uses better metrics to determine which regions to collect first based on ratio of garbage to allocated memory.
+        - Heap layout is equal-sized __heap regions__, each contiguous range of virtual memory.
+        - Allocating in a heap region involves incrementing a boundary. Mutator threads create TLABs within an allocation region for small objects.
+        - Empty regions are arranged in a linked list, finding one is O(1).
+        - Large objects ("humongous") take up >3/4 of one region and are allocated separately.
+        - Regions have a __remembered set__ of all locations outside of that region that might contain pointers into the region. Like a reverse pointer list. Mutator threads inform the heap via a __card table__ (512:1 bitset).
+        - What is the global set of filled RS buffers?
+        - __Evacuation__ phase: the GC moves live data from a less filled region into a different region and updates all inter-region pointers via its remembered set.
+            - Recall there is no free() operation, so this is the unit of actual GC work.
+            - Work-stealing for threads to copy data into their own GCLAB (thread-local) and then write a forwarding pointer to the old location.
+        - Generational mode: Regions marked as "young" when given to a mutator thread, scanned first during next cycle, which allows us to avoid some work in tracking changes.
+        - A form of snapshot-at-the-beginning (SATB) __concurrent marking__ that happens while the application is running, unlike evacuation which requires you to stop the world. This helps ensure completeness, since all regions will eventually be marked over time. Bitmaps are gradually constructed in "remark" phases after initial marking.
+    - Shenandoah (2016)
+        - Similar to G1GC, but it is newer and optimized for modern workloads.
+        - Initially not generational.
+        - "Shenandoah’s key advance over G1 is to do more of its garbage collection cycle work concurrently with the application threads. G1 can evacuate its heap regions, that is, move objects, only when the application is paused, while Shenandoah can relocate objects concurrently with the application. To achieve the concurrent relocation, it uses what’s known as a __Brooks pointer__. This pointer is an additional field that each object in the Shenandoah heap has and which points back to the object itself."
+        - "Shenandoah does this because when it moves an object, it also needs to fix up all the objects in the heap that have references to that object. When Shenandoah moves an object to a new location, it leaves the old Brooks pointer in place, forwarding references to the new location of the object. When an object is referenced, the application follows the forwarding pointer to the new location. Eventually the old object with the forwarding pointer needs to be cleaned up, but by decoupling the cleanup operation from the step of moving the object itself, Shenandoah can more easily accomplish the concurrent relocation of objects."
+        - Quote from G1GC is interesting since it mentions this technique, too. But they decided not to implement it.
+            - "To enable this fine-grained interruptibility, an extra header word is dedicated as a forwarding pointer, and the mutator must execute a read barrier that always follows these pointers (in the style of Brooks [9]; Henriksson [20] describes another hard real-time collector using this technique). Garbage-First avoids these space and time costs…"
+        - Shenandoah has a separate step that updates refs after evacuation, so concurrent evacuation can happen while the user's code is running.
