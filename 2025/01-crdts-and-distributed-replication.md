@@ -1,5 +1,5 @@
 - CRDTs and distributed replication (Jan 2025)
-    - [Zero](https://zero.rocicorp.dev/docs/writing-data) is a cool new offering from Replicache, and they seem to have attracted some attention. But their branding seems to fall in the Convex trap. A lot of big talk, not as much concrete argument for why it improves developer flow.
+    - [Zero](https://zero.rocicorp.dev/docs/writing-data) is a cool new offering from Replicache, and they seem to have attracted some attention. But their branding seems to have a lot of big talk, not as much concrete argument for why it improves developer flow.
         - The basic advantage is that you get automatic __optimistic updates__.
         - Yes, it is cool technology. My understand is that it's a differential dataflow query engine, replicated on both the client and server, with streaming updates. So you can not just get point data like Firebase, but also replicate query results in a differential manner. (Why do you want to do this? I think it just allows you to program __exact__ optimistic updates to complex queries.)
         - Zero only makes sense if you want a scalable read-write workflow with complex distributed queries. And optimistic UI updates. (Even then, if the optimistic revalidation is easy to implement by hand with SWR / useOptimistic, that seems better?)
