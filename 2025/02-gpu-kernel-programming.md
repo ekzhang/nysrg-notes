@@ -1,0 +1,20 @@
+- GPU kernel programming (Feb 2025)
+    - CUDA programming cheatsheet (PMPP)
+        - cudaMalloc, cudaMemcpy = device global memory
+            - global & constant memory > block shared memory > thread registers & local memory
+            - `__device__ float DeviceFunc` = device internal
+            - `__global__ void KernelFunc` = host calls device
+            - `__host__ float HostFunc` = ordinary function, you can use this along with device to get isomorphic libraries on both host + device
+        - threadIdx.x, threadIdx.y = index of thread inside its block (Thread 17,26) — blockDim
+        - blockIdx.x, blockIdx.y = index of block inside the grid (dispatch of kernel) — gridDim
+        - `__syncthreads()` only synchronizes within a block, execution between different blocks is order-independent and cannot have data dependencies, CUDA can execute individual blocks in any order it chooses at runtime.
+        - Warp = 32. Unit of thread scheduling in SMs, kind of like a cache line. Your blockDim should be a multiple of 32.
+            - Avoid thread divergence within a warp. SIMT: every thread proceeds in lockstep.
+            - Use favorable data access patterns. DRAM is not exactly random-access. Within a warp, access sequential data (row-major vs column-major).
+        - Sizing: You would have between 128-1024 threads per block, given block and thread per-SM limits. In practice, most people start with 128-256 threads per block.
+            - blockDim should be on the order of a single SM. In T4-A10-A100-H100 GPUs, you get like maximum of 16 blocks per SM. But blockDim also can't be too big, since then it won't fit on a single SM and can't be scheduled at all.
+            - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2FYAugZxPZ_V.png?alt=media&token=263b5ba3-d40e-448b-a2dc-235b8d8cb6c7)
+        - How to use shared memory? (64-228 KB)
+            - Tiling for matrix multiplication: Every thread loads one element of the shared memory array. Then syncthreads(), do your computation on all, and syncthreads() one more time.
+            - Also, prefetch tiles into registers during computation to do data load during independent compute. (Register size = shared memory size.)
+    - Applications to scientific computing. Think in parallel, try to avoid data dependencies, in geometric applications you can schedule compute smarter.
