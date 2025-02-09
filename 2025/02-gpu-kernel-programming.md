@@ -10,7 +10,7 @@
         - `__syncthreads()` only synchronizes within a block, execution between different blocks is order-independent and cannot have data dependencies, CUDA can execute individual blocks in any order it chooses at runtime.
         - Warp = 32. Unit of thread scheduling in SMs, kind of like a cache line. Your blockDim should be a multiple of 32.
             - Avoid thread divergence within a warp. SIMT: every thread proceeds in lockstep.
-            - Use favorable data access patterns. DRAM is not exactly random-access. Within a warp, access sequential data (row-major vs column-major).
+            - Use favorable data access patterns. DRAM is not exactly random-access. Within a warp, access sequential data (row-major vs column-major = GMEM coalescing).
         - Sizing: You would have between 128-1024 threads per block, given block and thread per-SM limits. In practice, most people start with 128-256 threads per block.
             - blockDim should be on the order of a single SM. In T4-A10-A100-H100 GPUs, you get like maximum of 16 blocks per SM. But blockDim also can't be too big, since then it won't fit on a single SM and can't be scheduled at all.
             - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2FYAugZxPZ_V.png?alt=media&token=263b5ba3-d40e-448b-a2dc-235b8d8cb6c7)
@@ -18,3 +18,35 @@
             - Tiling for matrix multiplication: Every thread loads one element of the shared memory array. Then syncthreads(), do your computation on all, and syncthreads() one more time.
             - Also, prefetch tiles into registers during computation to do data load during independent compute. (Register size = shared memory size.)
     - Applications to scientific computing. Think in parallel, try to avoid data dependencies, in geometric applications you can schedule compute smarter.
+    - Notes from siboehm — kernel optimization and tuning
+        - The rough idea seems to be to start with a blueprint for this kernel (load stuff into SMEM, in the proper order with vectorization, then multiply). Then tune all the numeric parameters to suit a particular workload on hardware.
+            - For example, global memory coalescing (2) is just, changing iteration order of output from [x][y] to [y][x]. This translates an incoherent load on A into a coherent load on B.
+            - Then, smem cache-blocking (3) shares the accessed memory across 32 threads.
+        - Arithmetic intensity (AI) computed as FLOPs / GMEM access.
+            - But although smem cache-blocking increases AI by 16x (~1 -> 15), and thus fitting under the GMEM bandwidth bound, it's still not close to reaching this limit. (And CUDA already does pretty good L1 caching automatically.)
+            - There's many other parts to this calculation. Not just improving arithmetic intensity.
+        - Occupancy = ratio of active/resident warps per SM, to total number of warps per SM. I think this is ~equivalent to threads since warp = thread*32. For example, there a 64 resident warps per SM on the A100, so you'd want to saturate that.
+            - In theory then, 2 blocks is fine right, for this kernel? But the blog post says it isn't fine. I don't totally understand this — I think it might just be an illustrative example, but as they mention, SMEM isn't the bottleneck in this specific case. It's registers & threads.
+            - Register count and SMEM capacity are the main limits to occupancy. You basically can't exceed the total L1 cache available to that SM.
+            - Q: How to count resource demands (registers / thread)? Profiling tools?
+        - Reading the profiler output
+            - See mix of executed instructions by count: LDS, FFMA, IADD3.
+            - See percentage of cycles in each warp state: Documented in [Nsight guide](https://docs.nvidia.com/nsight-compute/ProfilingGuide/index.html#metrics-reference).
+            - So you see, if you have a lot of memory stalls in your kernel, and you also look at the PTX and see more latency in LD than FMA… it's time to start blocktiling.
+            - This kind of optimization is just another way of increasing intensity. But the performance / profiling gives us higher confidence, and we can directly improve the kernel by reducing the memory stalling — less guesswork!
+        - Basically, kernels 3->4 and 4->5 all improve increase the number of work done per thread by 8x, then consequently decreases the number of GMEM accesses per element by 2x. The reason why is tricky.
+            - Kernel 3->4 uses BM=BN=64 and BK=8. This means each block computes a 64x64 tile of output, but only uses 2x8x64 = 1024 input floats in shared memory. This would usually be too many threads! But since each thread computes an 8x1 submatrix of outputs (warp = 8x32), block size = 512. (Basically we add an inner loop `dotIdx` to each thread).
+            - Kernel 4->5 increases AI more. Each thread computes an 8x8 tile (TM=TN=8). Also, BM=BN=128, wow! And BK=8 as before. So we end up with block size of 16x16=256, but still less GMEM accesses.
+            - At this point, SMEM access also can be optimized within block-tiling — this is where adding register caches helps. You can populate the relevant TN+TM entries into __registers__ before each iteration of BK. It's threadtiling!
+        - Kernel 9 is autotuning of BM, BN, BK, TM, and TN. Straightforward.
+        - Warptiling is yet another level that we can add on top of thread / blocktiling. I don't completely understand, but it seems to be just another loop based on having each __warp__ compute a given number of output elements in its dimension, same idea.
+        - To summarize: Every hardware level divides up the compute a bit, with its own caching and scheduling primitives. The caches and vectorization mean that we need to change our iteration order to suit the hardware. Tile compute smartly to increase occupancy, reduce GMEM / SMEM accesses. Along the way, use profilers & tune parameters.
+    - JAX: Pallas kernel language notes
+        - `import jax.experimental.pallas as pl`
+        - This is an embedded language in Python based on the concept of a "Ref". A bit higher-level, kind of like Triton in not needing to worry about the details of warptiling / blocktiling / threadtiling. Tries to maintain optimal control.
+        - All the kernels so far use `[...]` to get the whole block.
+        - You might want to write kernels differently on various devices. SMEM/GMEM loading. TPUs are like very wide SIMD registers, while GPUs are warp schedulers.
+        - "Ref" = mutable buffers in SMEM. JAX has you chunk up the kernel into blocks.
+        - `pl.BlockSpec` is the magic sauce that does the tiling and caching. Basically tells you how to carve up accessing each input for each output. In matmul, this is pretty simple, but you could implement blocktiling on it. Declarative instead of for-loops.
+        - Fusing a tanh activation function onto a kernel is trivial.
+        - Interesting: on TPUs, each operation has a cost. Addition, subtraction, multiplication are fast. But division/exp/tanh/pow are slower, and sin/cos are the slowest.
