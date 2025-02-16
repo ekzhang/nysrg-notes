@@ -50,3 +50,39 @@
         - `pl.BlockSpec` is the magic sauce that does the tiling and caching. Basically tells you how to carve up accessing each input for each output. In matmul, this is pretty simple, but you could implement blocktiling on it. Declarative instead of for-loops.
         - Fusing a tanh activation function onto a kernel is trivial.
         - Interesting: on TPUs, each operation has a cost. Addition, subtraction, multiplication are fast. But division/exp/tanh/pow are slower, and sin/cos are the slowest.
+    - Tinygrad codebase notes
+        - Small codebase, tries to be "everything" in a tiny package ~10K lines (it's dense).
+        - Getting quite good Metal performance with Tinygrad, even when `BEAM=0` is disabled and just manual optimizations are turned on.
+        - Interesting part is probably the backend, `get_kernel(Render, UOp) -> Kernel`. Applies optimizations in order and then does a Renderer pass. Kernel.opts is the "Renderer" that has all accelerator and dialect-specific stuff, like CUDA/Metal/C/PTX and so on.
+            - required_optimizations() — seems minor, skip for now, one UPCAST.
+            - apply_tensor_cores() — if device has TC, run optimizations that transform operations into tensor core arithmetic (__how?__)
+            - hand_coded_optimizations() — if not TC, then there's about 100 lines of optimization passes, very short (__how does this work, and why is it so simple?__)
+            - beam_search() — If beam search enabled (not by default), run beam search. This is slow but the results are cached after first evaluation. Runs the kernel many times.
+        - On my M1 Pro, matmul is like 20x faster after hand_coded_optimizations() and another 2x faster after that with apply_tensor_cores(). So it's clear that the optimization magic is happening somewhere in both of these two functions.
+            - (Also, the fact that it's device-independent is very impressive!)
+        - UOp is the tree of executed operations, kind of like a trace. It's constructed lazily when you chain ops, and then `Tensor.realize()` actually executes the whole thing.
+        - OptOps is TC, UPCAST, UNROLL, LOCAL, GROUP, GROUPTOP, NOLOCALS, PADTO, SWAP.
+            - They can also be applied to a specific axis number or operation argument.
+            - About the kernel itself: each tensor is multidimensional, and they have a coloring system to determine which parts of the kernel ("inner loops") correspond to each axis.
+            - ```python
+                # there's eight chunks of the shape
+                # blue   -- global dims
+                # cyan   -- local dims (warp ones first)
+                #  *** self.first_reduce
+                # green  -- reduce-local dims
+                # red    -- reduce loops
+                #  *** self.upcasted
+                # purple -- reduce upcasted
+                # yellow -- normal upcasted dimensions
+              ```
+        - I'm guessing that each of the Opt classes does some recoloring of the axes in each operation, and then the colors are used to generalized an optimized kernel in codegen.
+        - Okay, on further inspection of the tc and handrolled opts (exclude beam search):
+            - Handrolled: Matvec multiply (upcast reduce), group and fuse reduction axes, image data types (stride=4), heuristics to also upcast non-reduce axes, and then local grouping.
+            - **UPCAST** is mentioned in many places, what does this do? (green)
+            - The other important ones are GROUP[TOP], LOCAL, UNROLL.
+            - TC/PADTO are only used in tensor core opts, that's a separate thing. I can take a look at that later. Using a special instruction for matrix multiplication.
+        - At the last step of compiling a program, Renderer.render() then takes the linearized list of UOp (previously a tree) and lowers it into machine code for the backend.
+            - A couple backends, most inherit from CStyleLanguage (Clang, OpenCL, Intel, Metal, CUDA, AMD, WGSL).
+            - Some are special cases, like LLVM IR and PTX.
+            - In all cases the code is __very short and dependency-free__. Just format strings.
+        - Mysterious "swizzle" parameter in TensorCore. Looks like an odd permutation. It might have to do with how you arrange the first 10 axis numbers. Empirically determined?
