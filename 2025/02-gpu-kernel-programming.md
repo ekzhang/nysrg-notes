@@ -78,11 +78,60 @@
         - I'm guessing that each of the Opt classes does some recoloring of the axes in each operation, and then the colors are used to generalized an optimized kernel in codegen.
         - Okay, on further inspection of the tc and handrolled opts (exclude beam search):
             - Handrolled: Matvec multiply (upcast reduce), group and fuse reduction axes, image data types (stride=4), heuristics to also upcast non-reduce axes, and then local grouping.
-            - **UPCAST** is mentioned in many places, what does this do? (green)
+            - **UPCAST** is mentioned in many places, what does this do? (yellow)
             - The other important ones are GROUP[TOP], LOCAL, UNROLL.
             - TC/PADTO are only used in tensor core opts, that's a separate thing. I can take a look at that later. Using a special instruction for matrix multiplication.
+            - Note: Almost all operations can be represented in terms of the same shape algebra, this is why the code is so short!
         - At the last step of compiling a program, Renderer.render() then takes the linearized list of UOp (previously a tree) and lowers it into machine code for the backend.
             - A couple backends, most inherit from CStyleLanguage (Clang, OpenCL, Intel, Metal, CUDA, AMD, WGSL).
             - Some are special cases, like LLVM IR and PTX.
             - In all cases the code is __very short and dependency-free__. Just format strings.
         - Mysterious "swizzle" parameter in TensorCore. Looks like an odd permutation. It might have to do with how you arrange the first 10 axis numbers. Empirically determined?
+    - More notes on Tinygrad (with Chenyu presenting!)
+        - Biggest file is tensor.py, which basically all the high-level APIs on a tensor (matches Torch / JAX). Wrapper over an array of memory or something.
+        - Different runtimes, `python -m tinygrad.device` to show supported devices.
+            - Quick notes: inside `runtime/`, ops_gpu is OpenCL, disk is something to do with random-access memory, hip is AMD HIP, amd is AMD RDNA 3, Intel is OpenCL + XMX tensor cores, ops_nv is Nvidia without CUDA (PTX?), qcom is Qualcomm
+            - DTypes supports ints, floats (no float8 yet), images.
+        - tinygrad.nn: optimizers, mnist/cifar datasets, and model state (safetensor, tar, ggml)
+        - tinygrad.gradient: has a `PatternMatcher` for each of the ~20 ops that maps them to the gradient of the op, very compact list of ops, not even a specialized convolution!
+            - Philosophy of tinygrad is to simplify things down to as few ops as possible, and these are encoded in UOp. "If you get new hardware, you're not going to write a conv gate on it."
+        - Tensor -> lazydata -> ScheduleItem -> ExecItem -> codegen -> source code -> compiled binary -> runtime
+        - tinygrad.engine: everything before codegen, there's lots of stuff here!
+            - schedule.py: tensor graph, **grouping (kernel fusion)** and linearizer for topological sorting, as well as the memory planning
+            - realize.py: ScheduleItem -> ExecItem (1 per kernel), can be pickled and sent to nodes
+            - search.py: BEAM search and MCTS
+            - jit.py: replay execution with new data? similar to ExecItem? — it can be used to speed up a repeated computation, can store a whole CUDA graph = multiple kernels
+            - multi.py: NCCL and ring allreduce system
+            - memory.py: "very straightforward" memory planning system
+        - tinygrad.codegen: kernels, optimization actions
+            - Kernel.to_program() -> ProgramSpec
+            - Sticking to searches on real devices for now, rather than a "smart" simulator or something else. This helps you avoid problems.
+            - linearize.py: order into blocks, any topological ordering of blocks is a valid program
+            - lowerer.py: rewrites or permutes buffer indexes into tensor / array indexes
+            - rewriter.py: general library for simplification rules on UOp trees; const folding, folding load/store, etc.; and every compile / lowering step has its own rewrite rules
+            - transcendental.py: implement sin, exp2, log2, pow if device doesn't support it natively
+            - __(currently doesn't support some common tricks like double-buffering, local memory copies)__
+        - tinygrad.shape: representing multi-dimensional arrays
+            - view.py: lazy zero-copy views / permute on arrays
+                - __trivia: determining the index to access in the buffer after a reshape() requires int division/modulo, which is slow on gpus! this is why modern gpus have dedicated integer units__
+            - shapetracker.py: shape-tracking algebra, stack of multiple views, tracking properties throughout the views (maybe locality is better? use OptOps.SWAP)
+                - __Operation to merge two views / ShapeTracker.simplify() can be applied. But the algebra is surprising, you can have 3 views that are not piecewise merge-able but all 3 can be merged. Apparently it's NP-hard lol.__
+        - tinygrad.renderer: take code blocks from codegen, make them into real source code
+            - Fun fact: for WGSL, browsers limit the size of your buffer, so you need to chunk the weights when running Llama.
+            - Can learn and try some GPU programming with WebGPU!
+        - tinygrad.runtime: copy memory between host/device, allocate RAM, & dispatch kernels
+            - Some backends have RDMA.
+            - These all just call into different ways to allocate a buffer, run a program ~100 LoC.
+            - ops_cloud.py: send GPU backend operations over USB, HTTP (1 req per ExecItem)
+            - ops_amd.py: they believe in AMD hardware
+            - support/hcq.py: [Hardware Command Queue](https://docs.tinygrad.org/developer/hcq/)
+            - graph/: Maybe you run llama, and it's like 300 kernels (ExecItem), or you train a big network and each step is 50,000 kernels — limited by queue dispatch time (each ~ns). This is CUDA Graph, you replay the queue of multiple kernels / save the dispatch for later.
+        - tinygrad.viz: when `VIZ=1`, display a webapp of all the UOp graphs / rewrites
+            - Convention for global buffers: input = 1 and output = 0
+        - Environment variables
+            - DEBUG=1..7 — show kernel dispatch, codegen, timing and shapes, gets more specific
+            - TRACEMETA=3 — show line number of the code
+            - BEAM=2..4
+            - NOOPT=1
+        - What is swizzle? It's apparently in the GPU docs, you need to swizzle your input into a specific register order, before calling into a tensor core instruction.
+        - Currently looking for gains on better memory planning & kernel fusion.
