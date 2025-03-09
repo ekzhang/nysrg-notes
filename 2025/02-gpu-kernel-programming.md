@@ -135,3 +135,9 @@
             - NOOPT=1
         - What is swizzle? It's apparently in the GPU docs, you need to swizzle your input into a specific register order, before calling into a tensor core instruction.
         - Currently looking for gains on better memory planning & kernel fusion.
+        - OptOps
+            - GROUP = […][…][…][…], an i++ loop for each thread
+            - GROUPTOP = strided groups, like the "k" axis in blocktiling
+            - UPCAST = float4 type, very fast
+            - UNROLL = loop unrolling (similar to UPCAST in principle)
+            - LOCAL = ???
