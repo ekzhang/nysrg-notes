@@ -29,3 +29,51 @@
         - https://darkroom.engineering/
         - https://www.joshuas.world/
         - https://qrshow.nyc/
+    - Reminded of 3D work
+        - Google gravity, the original inspiration for a lot of this.
+        - Case study, Lusion's connectors. https://codesandbox.io/p/sandbox/xy8c8z
+            - The source of this is actually quite simple. No keyframes, just a physics engine with impulse -x applied on each frame, and a kinematic sphere collider.
+            - Three different materials. Pull in the glTF for the connectors.
+            - Some tech here.
+                - N8AO = SSAO library https://github.com/N8python/n8ao
+                - "Lightformer" = dynamic construction of HDRI environment lights with React, doesn't cost extra ray intersections like real lights do(?)
+            - Overall only like ~100 lines of code, but you need to be comfortable knowing where all the controls are. Like setting near/far/fov in Blender, versus props on the scene.
+                - Can use a design engineering workflow. Start with a main component, gradually add more stuff. But mix it in with creative execution, tweaking stuff.
+            - Remember that the library editor is one way to construct these graphics, but it requires writing code. There's a bunch of merit to exploring in actual creative tools / software like After Effects, Blender, or Rive. They're purpose-built UIs instead of PL.
+            - But I guess code helps capture custom logic in a way that isn't so easy. Tends toward anything more __procedural__, … up to generative art, or video games. Even postprocessing can be done better with node graph editors.
+    - How does N8AO work (SSAO for three.js)
+        - Two shaders: EffectShader and PoissonBlur, both WebGL.
+        - There's some glue code to bind all the uniforms and inputs/outputs together. It seems to use textures and involves view / projection matrices, not sure exactly how though.
+        - Ah okay, it takes the depth, normals, and albedo. Then calculates occlusion based on the depth buffer results.
+        - TBN matrix = local coordinate system around the normal vector (tangent + bitangent). It uses blue noise jittering around each pixel to grab a few other samples, then weights them and reduces variance.
+        - SAMPLES = 16, takes random samples along a hemisphere and then projects them back to world position and loads a point from the depth map.
+        - Second part is a **Poisson blur**. Raw SSAO values are low sample count and noisy / jittered with random blue noise. So then it applies a Poisson disc blur (Poisson = random samples to avoid aliasing), weighted by a distance kernel.
+    - March 30. Might spend this meeting thinking about maps.
+        - Questions about tiles: What's the difference between actual terrain information and layers on top of that? How many layers are included in a tile server, and what's the standard? What free tile servers or datasets are available?
+        - Question (practical): What's the best way to draw / customize a map on a website and to dynamically style it? How about post-processing the image or adding isolines? Surely it's not too hard of a systems problem.
+        - Frontend: MapLibre GL vs Mapbox GL (both Mapbox API) vs Leaflet (less powerful).
+            - Seems like Leaflet is probably slower and not optimized with WebGL, probably also not a very modern appearance.
+            - MapLibre offers real-time data visualization, dynamic styling, GPU acceleration.
+            - Interesting that [deck.gl](https://deck.gl/) exists as a library too. This looks like a pretty neat API for data visualization on maps. It's like the map itself acts as a canvas, and `react-map-gl` plus the deck.gl / loaders.gl ecosystem display data on top.
+            - "styles.json" loaded from https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json — see https://carto.com/basemaps
+            - CSV file in hex bin demo is just a list of lat,lng pairs. Then they're converted to [lat,lng] pairs by JavaScript before being passed in. `gpuAggregation` is interesting.
+            - `transitions: { elevationScale: 3000 }` for the fade in animation.
+            - `mapStyle` is set to a style.json URL, but where's the tile server URL when you're using the `<Map>` component from Maplibre? I'll check the Network tab to see what's going on here, maybe there's a hardcoded default.
+                - Oh I just realized that the style file actually has the source as a URL in that file. `"sources": { "carto": { "type": "vector", "url": ".../tiles.json" } }`
+                - https://tiles.basemaps.cartocdn.com/vector/carto.streets/v1/tiles.json
+                - https://tiles-b.basemaps.cartocdn.com/vectortiles/carto.streets/v1/5/16/9.mvt
+            - MVT = Mapbox Vector Tiles, a Protobuf of path winding number-based shapes.
+        - Okay, getting more into the format here. The rendering library is code that takes ["style" documents](https://maplibre.org/maplibre-style-spec/) and turns them into interactive, rendered maps.
+            - https://en.wikipedia.org/wiki/World_Geodetic_System
+            - There are like at most 22-ish levels of zoom in maps (high resolution). This matches the Earth's diameter, which is about 12 million meters or 2^23.
+            - Z=0 is the world in 1 tile. Z=14 is about 1.5 km per tile, or a neighborhood level.
+            - At Z=22, you can see individual cars or benches. Each pixel is 2 cm.
+            - "Web Mercator" (EPSG:3857) is coordinate system for point, linestring, or polygon. Each named layer in the tile has features, and each feature has key-value properties.
+            - [tippecanoe](https://github.com/mapbox/tippecanoe) turns GeoJSON/Geobuf/CSV features into tiles.
+                - > The goal of Tippecanoe is to enable making a scale-independent view of your data, so that at any level from the entire world to a single building, you can see the density and texture of the data rather than a simplification from dropping supposedly unimportant features or clustering or aggregating them.
+            - The style files take a source, take a "source-layer" string within that source, and filter it by one or more conditions (`property == value`). Then you can add fill/background, which are colors graded by the zoom level.
+            - You might also only show these layers at different minzoom / maxzoom levels.
+    - Demos now!
+        - People making small scenes in three.js!
+        - mc-bench has this thing to render Minecraft scenes with commands in AI models.
+        - https://design.google/library/exploring-color-google-maps
