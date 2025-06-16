@@ -1,0 +1,68 @@
+- Modern Vision Systems (Jun 2025)
+    - Recap on generative models / [diffusion theory from scratch](https://iclr-blogposts.github.io/2024/blog/diffusion-theory-from-scratch/) — there are two dual ways of thinking about the DDPM work, one in terms of modeling score via Langevin dynamics / statistical mechanics, and one in terms of reversing a Gaussian diffusion process.
+        - To estimate the score scalably, previously people used all kinds of complex objective functions. Key insight that made it work in DDPM was diffusing the sample data into Gaussians, and then only modeling the score function on the __parts that matter__ (i.e., the paths from the sample data to eventually reach their destination), not the whole space.
+        - Last bit of the equation is the __schedule__ (beta): this basically tracks how much of the information you lose as you diffuse to Gaussians on each step / add noise (forward). It then affects the reverse equation / denoising process.
+        - People use cosine schedules because they look good and empirically get better detail, but any schedule is theoretically grounded.
+        - DDPM uses Fokker-Planck equation and Anderson's reversal to explain the math, versus the Langevin dynamics explanation (reverse-first) that builds up the theory chronologically.
+        - Note that the score function depends on time t, this is an input to the learned model (U-Net for Stable Diffusion) via a sinusoidal timestamp embedding.
+    - Practical diffusion models / advancements.
+        - Some more steps are needed to go from the common math to actually usable results. This is why we had an explosion of papers after DDPM.
+        - As for the actual neural network architecture:
+            - Residual block: x -> conv1 -> (+time embedding) -> activation -> conv2 -> (+residual). 
+            - Attention layers: self-attention in middle block, and cross-attention with text or image conditioning in encoder and decoder stages.
+            - Encoder blocks use 2x strided convolutions, decoder blocks use 2x upscaling.
+            - `attention_resolutions` (say: 4, 8, 16) — at how much downsampling do you introduce attention blocks. These come between residual blocks, and they include both multi-head self-attention (like transformer encoder) and cross-attention. OK, easy enough.
+        - Convolution is used by SD 1.5 / SDXL, other models like [Imagen](https://papers.nips.cc/paper_files/paper/2022/file/ec795aeadae0b7d230fa35cbaf04c041-Paper-Conference.pdf) vary the U-Net architecture or make it more efficient.
+        - Also [this paper](https://arxiv.org/pdf/2102.09672) "Improved DDPMs" (2021) looks like it was a pretty big practical advancement in efficiency of these models. It uses cosine schedule in forward pass and __learns__ the reverse variances via interpolation trick, model decides how confident it is in adjusting the variances.
+        - Another [big paper](https://arxiv.org/abs/2010.02502) DDIMs (2020) that this built on, an efficiency improvement to see the code for. It's just a different "sampler" — and various models will either predict epsilon, x_0, or v (velocity). The sampler is kind of just a numerical integrator for the reverse SDE, basically how you actually go from scores to samples via the reverse Ornstein-Uhlenbeck (damped Langevin) process.
+        - Most popular sampler today seem to be DPM++ or variants. Basically, all samplers converge to the same under infinite time steps, kind of like how RK4 and Euler do the same thing. But practical models today use 4-30 steps, and then the algorithm choice matters!
+        - See [How Imagen Actually Works](https://www.assemblyai.com/blog/how-imagen-actually-works) for another blog post take on this. There's some more steps as you piece everything together: the U-Net diagram, STM/MTL super-resolution models, and classifier-free guidance (interpolating between guided=1 and unguided=0).
+        - This is why the models are __systems__, they take the foundational math and create complex things out of it as they design model architectures.
+        - DPM++ solvers are from [this paper](https://arxiv.org/pdf/2211.01095), including DPM++2M.
+    - Alright, back to image backbones. Will read a bit about these.
+        - EfficientViT calls itself an "image foundation model." Is this a compelling description of what it does, or is it more of a backbone? I guess it depends on how it can be used.
+        - See this [recent comparison of Vision Transformers](https://arxiv.org/pdf/2308.09372) from February 2025. It breaks down the improvements into three categories: 1) faster attention or hybrid convolutional-attention algorithms / O(n^2) self-attention bottleneck, 2) removing / merging some of the token sequence, and 3) changing up the final MLP block.
+    - Apple's Core ML
+        - Apple's Core ML is surprisingly open-source and has a lot of details. What is the `.mlmodel` format, and how does inference actually work? Sounds like it's a lot faster in iOS 15+.
+        - Their examples are older vision models (ResNet50, MobileNetV3-Small), sounds like this hasn't been updated too recently.
+        - Utilities for quantizing model weights, other compression methods. The flow is pretty standard, you build out your model in PyTorch/TensorFlow or other frameworks, then trace and export it into a format compatible with Apple.
+        - I guess that [OpenELM](https://apple.github.io/coremltools/docs-guides/source/convert-openelm.html) (2024) is a newer model from Apple, for Core ML deployment.
+        - Unclear how the actual inference engine works, on-device. It's definitely a familiar mobile deployment story, and the company is in charge of the whole runtime engine. But I think, maybe the open-source ecosystem should be responsible for this.
+    - Grounding DINO
+        - Object detection model (DETR = detection transformer), built on [GLIP](https://github.com/microsoft/GLIP), which extends CLIP to object-level descriptions within an image. That's why it's grounded.
+        - Previous object detection models might only let you detect predefined classes, but that doesn't generalize well. Rather than asking the model to do that, you can use text-image embeddings and then ask for captioning / detecting novel classes of objects.
+        - Often plugged into robotics pipelines now.
+        - Some people are using it for masked image generation with Stable Diffusion. Results seem somewhat questionable, but I get it.
+    - SAM 2
+        - Meta model for image segmentation from human descriptions.
+        - What's the model architecture?
+    - Vision model foundations
+        - Let's drill into ViT models and then alternatives that explore their computational efficiency and rationale behind the model architecture.
+        - MobileVit (2021) https://arxiv.org/abs/2110.02178
+        - EfficientFormer (2022 / 2023) https://github.com/snap-research/EfficientFormer
+        - Question: What happened after 2023? Do people not study this direction anymore? (It sounds like they're still the best models out there, but maybe progress stalled. Or the ChatGPT launch led people to focus on other kinds of research.)
+        - [CLIP-UP](https://machinelearning.apple.com/research/clip-up) (2025) — A Simple and Efficient Mixture-of-Experts CLIP Training Recipe with Sparse Upcycling
+        - [MetaFormer](https://arxiv.org/pdf/2111.11418) (2022)
+            - This is a criticism / analysis of the core idea that makes vision transformers work. Also mentions / compares to architectures like ViT, ConvNeXt. Got here by starting on the FastViT paper and learning about the architecture.
+            - It's not necessarily the self-attention heads. What matters is a "token mixer" module, having something that combines information between spatial tokens.
+            - The idea of a transformer is, image -> patch embedding -> blocks, where each block is [norm, <mix>, residual, norm, MLP-ratio4, residual] like a transformer.
+            - Except the <mix> doesn't need to be self-attention, it could even just be a high-pass filter with 0 parameters. Or as in the FNet paper, they replace attention with a Fourier transform that also does not have any parameters!
+            - PoolFormer gets reasonable results, despite lacking self-attention. Patch stride 4, then /8, /16 and /32.
+                - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2FmX9vnQT6vC.png?alt=media&token=dc77e7a1-87ec-4f2b-b262-dfaf0e954fe9)
+            - An interesting relationship here with ConvNeXt, which is a very popular transformer that has __depthwise convolution__ blocks and 1x1 convolutions. The "pool" operation is like a fixed-weight depthwise convolution, and the 1x1 convs are like per-token MLP blocks.
+            - So, ConvNeXt has an almost identical block design compared to MetaFormer, I guess this is where the key idea comes from originally.
+                - MetaFormer just takes it to the logical conclusion by eliminating attention.
+            - Something to think about with all of these models — what's the __training recipe__? I often don't think about this too much since I'm just doing inference, but it's important to think about where the datasets are coming from, and what we can reproduce practically. Otherwise, it's just a bit out of reach for people outside of the big labs.
+        - FastViT (2023) https://github.com/apple/ml-fastvit
+            - Newer paper than EfficientFormer, ConvNeXt, Swin-T, CMT.
+            - Interesting that they also still compare to EfficientNet-B4, and ResNet-50. Guess those traditional convolutional neural networks are still interesting to people.
+            - __"novel token mixing operator, RepMixer, a building block of FastViT, that uses structural reparameterization to lower the memory access cost by removing skip-connections in the network"__
+            - Nice, it's the top model on the [Core ML Models page](https://developer.apple.com/machine-learning/models/) on Apple right now. The smaller variant T8 is only 6.5 MB, headless, and runs in less than a millisecond!
+            - They also replace all convolutions with depthwise + pointwise counterparts. These convolutions are typically used in stem/patch embedding layers.
+                - Note: patch embedding = ViT, stem embedding = ConvNeXt and FastViT.
+                - Patch embeddings are rigid divisions of the image, while stem embeddings are just a bit more overlapped, perhaps stronger local features.
+            - RepMixer(X) = DepthwiseConv(BN(X)) + X. At inference time, with batch size 1, this can just be reparameterized to a single DepthwiseConv!
+            - Lol this is funny, they compared it to PoolFormer and found a 43% latency reduction due to the lack of skip connections! Less memory accesses.
+                - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2FG2glEvhPzy.png?alt=media&token=0ddb7d9c-1114-4c42-9e58-235242a6aa14)
+            - For semantic segmentation, they use the [Semantic FPN](https://arxiv.org/abs/1901.02446) decoder (2019).
+            - Project ideas: take your webcam, run some segmentation on it, apply cool filters like reflective light effects (Vercel-ish) or physics.
