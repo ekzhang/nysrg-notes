@@ -66,3 +66,66 @@
                 - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2FG2glEvhPzy.png?alt=media&token=0ddb7d9c-1114-4c42-9e58-235242a6aa14)
             - For semantic segmentation, they use the [Semantic FPN](https://arxiv.org/abs/1901.02446) decoder (2019).
             - Project ideas: take your webcam, run some segmentation on it, apply cool filters like reflective light effects (Vercel-ish) or physics.
+    - Rectified flow
+        - I guess I'm returning to some of the diffusion model stuff, since it's the most fun and mathy part. Also I like geometry, so seeing these ODE / SDE models is cool!
+        - History of models:
+            - SD 1.1-1.4 = original by CompVis with the same model architecture and different training checkpoints (LAION), then SD 1.5 = Runway, SDXL / SD 3.x = Stability AI.
+            - After Stability AI collapsed, the researchers moved on to Black Forest Labs. They are releasing FLUX.1 with different variants and sizes. Each of these models is pretty flexible (conditioning, output size, …), and Schnell is the smallest. It's what powers the image generation on the Modal.com site, which is very fast.
+            - Looks like state-of-the-art has moved on from diffusion (DDPM / DDIM / …) into rectified flow transformers (SD 3.5, FLUX.1). Biggest models are expensive and not public, but they're also not __that__ much better than the open-source available ones.
+        - https://rectifiedflow.github.io/ — rectified flow tutorial, series of good posts
+        - Going to take some notes from reading / skimming the [flow book](https://www.cs.utexas.edu/~lqiang/PDF/flow_book.pdf) though. This one is about 100 pages long, and I think the complete exposition would help.
+        - Ch 1. Rectified Flow
+            - You write an ODE that takes $$Z_0 \sim \pi_0$$ and moves it along $$\dot Z_t = v_t(Z_t), t \in [0, 1]$$.
+            - Note that the velocity curve is time-dependent. Can solve this using Euler's method or other solvers. Many flows but aim to have __straight transports__ for computational efficiency, since you accumulate less error in each step.
+            - The "rectified flow" idea is to take an arbitrary coupling of $$\pi_0$$ (noise) and $$\pi_1$$ (model distribution), then just train the ODE model $$v_t$$ by interpolated paths from each pair in the coupling. __Hand-wavy part:__ The parts where the paths "cross over" naturally average out during training, and we're left with a rectified model.
+            - Rectify() can be used on any time-differential stochastic process. It produces a more optimal transport, since there's less cost / Wasserstein metric? Also during inference you get a "straighter" path.
+            - You can do it with any interpolation process, $$(\alpha_t, \beta_t)$$ where alpha: 0->1 and beta: 1->0. This encodes time scaling. When alpha+beta=1, you get linear interpolation, and alpha^2+beta^2=1 gives you DDPM/DDIM (spherical).
+            - I think I can see how the loss term matches up between flow matching and DDPM-style score matching! In either case — you train by averaging over random couplings of data to noise, and random timesteps, taking L2 error. So they're kind of the same quantity, just interpreted differently though score and flow.
+            - Things to vary: loss function, time-weighting by $$\eta_t$$. You can also improve the sampler by adding a bit of steady-state Langevin dynamics on the distribution of $$Z_t$$, this provides some negative feedback but can reduce detail if too much noise is added. You need the score $$\nabla \log \rho_t(Z_t)$$ to do this, but that's obtainable in closed form from the flow thanks to [Karras et al., 2022](https://arxiv.org/pdf/2206.00364).
+            - Historically it developed as diffusion, then diffusion as ODEs (DDIM), then just learning flow directly — with possibly some diffusion in the sampler.
+        - Ch 2. Marginals and Errors
+            - There's some math here to prove that Rectify() preserves marginals for all t. If you have a time-differential stochastic process $$\{X_t\}$$, and $$\{Z_t\} = \mathrm{Rectify}(\{X_t\})$$, then we want $$X_t \sim Z_t$$ to match for all t.
+            - Okay they did a couple manipulations with derivatives + Adam's law which amounted to basically, ending up at some integral equations of a test function over the distributions $$\pi_t$$, based on $$v_t^X(X_t) = \mathbb E[\dot X_t \mid X_t]$$ the normalizing flow. Then they cited a random theorem from analysis to finish it off, a uniqueness result for flow solutions via measure theory.
+            - Another intuition to think of it: it's kind of like a continuity equation. If you have two flows in different directions, you can kind of average them out, and the same "quantity" of probability mass flows in aggregate.
+            - Next, they study the KL divergence, Bergman, and semantic loss of these marginal distributions with ODE vs SDE. I didn't look at this too closely.
+        - Ch 3. Interpolations and Equivalence
+            - If you pass the $$X_t$$ process through a time-variant diffeomorphism $$\phi_t(x)$$, and/or a time schedule $$\tau_t$$, this commutes with rectification. (ok seems reasonable, the averaging is a local property)
+            - In particular, this means all the different affine transformations are equivalent, with different alphas, betas, and time schedules. (…really? wat)
+            - They also prove that straight and spherical are the same, up to a reparameterization. Their explanation is the identity $$\dot \alpha_t' \beta_t' - \alpha_t' \dot\beta_t' = \pi/2 = \text{constant}$$. (Note that the book has a typo.) Seems believable enough, cool — this means spherical vs linear doesn't matter in training if true.
+            - Euler method can be viewed as piecewise linear approximation of the flow. But if you're doing a "curved interpolation scheme", you want __natural Euler samplers__ that is invariant/equivariant. Includes DDIM, DDPM, EDM, DMP solvers.
+            - Natural Euler = instead of line segment, take the same interpolated curve at each point, but extended tangent to the velocity. This is same as Euler for linear interpolation, but for spherical (affine), you use some trig identities and get the same formula as DDIM. So DDIM is derived as a special case of natural Euler.
+            - [Their blog post has a great visual of this, applied to DDIM.](https://rectifiedflow.github.io/blog/2024/DDIM-and-natural-euler/)
+            - It's mentioned that you can derandomize __stochastic__ smooth interpolations by just Rao-Blackwellizing away the randomness, lol. But this is definitely a case where the theory doesn't quite hold in practice.
+        - Ch 4. Identities
+            - This is where they derive Tweedie's formula and score functions for straight interpolation to a normal distribution. Nice! This is what lets us add additional noise with Langevin dynamics during sampling, for flexibility. ("Karras", I think)
+            - Some more identities with covariance, curvature, L2 error bounds. Fine.
+        - Ch 5. Stochastic Solvers
+            - Alright, here is where they get back to the main course. ODE can have a stochastic solver by re-injecting a bit of Langevin dynamics, tuned as needed. ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2FlktyvtxGKv.png?alt=media&token=98fa32ab-a066-4fde-877b-857f366bda37)
+            - Tweedie's formula in Ch 4 is how we compute the score in the second term.
+            - Why bother with Langevin dynamics? It's a __self-correcting mechanism__ or something, reduces outliers. Maybe a little counterintuitive, but __larger diffusion yields more concentrated samples__. Why?
+            - We recap Euler–Maruyama / Brownian motion and Fokker–Planck Equation, which drifts particles away from high density (i.e., by negative score function).
+            - "It is known that Langevin dynamics can be viewed as the gradient flow of the KL divergence … under the 2-Wasserstein metric … a gradient flow in the space of distributions" wtf
+                - My attempt to translate to English: given any distribution, if you apply LD to it, you get closer to the target distribution by KL divergence. In fact, you get __maximally closer__ per unit of Wasserstein metric ("earth moved").
+                - So the intuition is that LD corrects distributional drift. Great!
+            - Something about different noise schedules here, including derivations for the original DDPM paper.
+        - Ch 6. Reward Tilting
+            - Here "tilting" means that we weight the final distribution, in a Bayesian sense where we multiply it by a reward function $$r(x)$$ and then renormalize. I think an example is a censor that weights improper images with $$r(x)=0$$.
+                - My first instinct is to just do importance sampling. But this is slow / not guaranteed. You'd much rather get a new flow, so you don't waste time.
+                - "The question is how … preferably without retraining the model."
+            - So they tilt it, and now we're trying to recover properties of the tilted process by doing some mathematical tricks.
+            - Oh I see. They end up with "Gaussian tilting" results that tilt the model in terms of L2 distance away from a target point $$x^*$$, with linear/spherical schedules. Basically updating the velocity field to point more in that direction, but mathematically sound.
+            - Algorithm also can be used with negative factor to steer away from a point.
+            - Seems of questionable utility given existing text-conditioning.
+        - Reflections
+            - The math is nice, although they spend a lot of time just thinking about this abstract idea of "rectification" in theory, which may or may not actually align with what's going on with rectification in practice.
+            - The "neural network as a learned function" is doing __a lot__ of heavy lifting in this description. The dynamics of training the neural network probably are equally as important as the flow itself, since it's due to the inductive biases / continuity that any rectification happens at all, with floating-point numbers being inexact.
+            - Also the 2D example they have of the o=>o flow with crossing paths on a square is iconic. It might be the fundamental picture of what's going on.
+            - They have a bunch of algebraic formulas. It must take quite a bit of practice to convert between the different time schedules, diffusion ODE/SDE terminology, and interpolations in your head. At least this book is relatively consistent in its notation, unlike papers.
+    - What is actually in SD3?
+        - [Scaling Rectified Flow Transformers for High-Resolution Image Synthesis](https://stabilityai-public-packages.s3.us-west-2.amazonaws.com/Stable+Diffusion+3+Paper.pdf)
+        - This paper starts with rectified flows ("not yet decisively established as standard practice") and then tries 61 different combinations of loss, schedule, on a few datasets.
+        - Also parameterize based on model depth, run a bajillion scaling experiments.
+        - The model architecture itself is a pretty straightforward extension of [Diffusion Transformers (DiT)](https://arxiv.org/pdf/2212.09748), where the latent image is split into patches. Except with two modalities for images and text, which are sent in parallel with different weights (but combined for self-attention).
+          ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2F2N8XN3KkBU.png?alt=media&token=1fde0c20-7e1e-4c1b-80b8-b3f7567abc0a)
+        - I guess one interesting thing is how they use CLIP-G/14, CLIP-L/14, and T5 XXL together — the former two are used in the adaptive layer norm weights (adaLN), which isn't like the cross-attention in prior U-Nets. But the latter is principally used as text tokens & passed through the DiT blocks directly. I wonder why this worked for them.
+        - Alright, this seems pretty straightforward. One thing to remember here is that "straight line" refers to the forward / generative process for rectified flows, as opposed to DDPM. The sampling process is still always going to involve multiple ODE/SDE iterations.
