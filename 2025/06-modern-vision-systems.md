@@ -129,3 +129,22 @@
           ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2F2N8XN3KkBU.png?alt=media&token=1fde0c20-7e1e-4c1b-80b8-b3f7567abc0a)
         - I guess one interesting thing is how they use CLIP-G/14, CLIP-L/14, and T5 XXL together — the former two are used in the adaptive layer norm weights (adaLN), which isn't like the cross-attention in prior U-Nets. But the latter is principally used as text tokens & passed through the DiT blocks directly. I wonder why this worked for them.
         - Alright, this seems pretty straightforward. One thing to remember here is that "straight line" refers to the forward / generative process for rectified flows, as opposed to DDPM. The sampling process is still always going to involve multiple ODE/SDE iterations.
+    - Stepping through FLUX.1 Schnell code
+        - Going to take some notes on this process here. Getting started, I downloaded the two big weights files, ae.safetensors and flux1-schnell.safetensors. These have some metadata and then a few hundred big array buffers in bfloat16 format.
+        - First issue is loading them using the safetensors library. Unfortunately, this doesn't support bfloat16 for JAX. It only has that for torch. So that's an ecosystem annoyance.
+        - When I run `t = f.get_tensor("decoder.conv_in.bias")` on the flax mode, it gives me float32 dtype. The shape is right at least, and the weights look reasonable.
+        - I guess I can load them in numpy mode, then run jnp.array(…, dtype=jnp.bfloat16).
+        - BTW, I think I won't have enough RAM on my laptop for this whole thing. Will start by developing the autoencoder though, and then maybe we can move to a Modal notebook (or function) on H100 for the rest of the implementation.
+        - Flow might end up being, rapidly push changes to a Git repo, then `pip install` from that Git repo inside my notebook? Kind of jank TBH.
+        - [Penzai](https://penzai.readthedocs.io/en/stable/notebooks/how_to_think_in_penzai.html) is cool with its pretty-printing and visualization tools for research, too tricky to get used to right now though, I just want to get something running.
+        - Ok hm, I got a bit further and think it's probably just going to be more productive for me to first copy/paste big chunks of code into a notebook and explore it by changing things up or profiling it, rather than reimplementing everything from scratch at first.
+        - I'm midway through, got the VAE latents, also figured out the difference FLUX.1 dev/schnell and other models are actually just the same architecture, 12B parameters each.
+            - Difference is training process, schnell takes fewer diffusion steps, maybe trained with a bias toward straight-line ODE flows?
+        - Rope = rotational position embeddings, they come in pairs. Applied proportionally to each channel, so channel i and position j has rot(i / theta^(dim/max_dim)) embedding. This makes sense — frequency is exponential with dimension number.
+        - Alright, almost there. Copying was definitely the move, can skip over parts I'm not so interested in __at the moment__ like pretrained encoder submodules. Now I'm running into an issue where the model weights that I loaded are all Float32 instead of Bfloat16, which seems like a mistake when loading the safetensors files.
+            - Ah, I'm dumb, I just didn't write `.to(torch.bfloat16)` during initialization.
+            - Ok it works now. Glad I have LSP support and AI in this notebook environment, the delay isn't so bad honestly and it's very helpful when coding at 1 AM.
+        - Need to restart kernel, oops. My messing around has used up all the GPU memory, and I think IPython is keeping around references to the variables that I printed out in cells, which prevents reclaiming the model memory. D:
+        - There goes probably another 5-10 minutes, will come back. Back down to 33 GB / 80 GB.
+        - Great, we did it! I understand a bit better where the surfaces for creative control here are. A lot of the workflows fit well into torch primitives, with some loose wrappers. It strikes me as a good balance between flexibility and structure — most modules in this codebase do what you expect, but they can also be modified from the outside, by autocast or no_grad or device casting and so on. Not too much model edits needed.
+        - https://gist.github.com/ekzhang/663b6bccd1bfa1848c02a45afa171cef
