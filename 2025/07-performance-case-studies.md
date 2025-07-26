@@ -194,3 +194,42 @@
             - `perf stat` is probably better for this for getting a summary report and navigating it with paths / debug info. bpftrace might be better at network operations and so on, even if it can technically do all the same things with enough effort.
             - Can see some other metrics like branches, makes sense.
             - This library isn't particularly optimized, and neither is its dependencies. But it's naturally fast enough, being in Rust and so on, and rustybuzz. Lots of room for performance optimization with buffers if you really needed it (see Forma, for instance).
+    - typescript-go
+        - Quick intro, this is a 2025 project from Microsoft, compare with esbuild (2021) which was seminal and started the movement of JS language tooling to Go.
+        - Recall the [esbuild FAQ](https://esbuild.github.io/faq/#why-is-esbuild-fast) on "Why is esbuild fast?" and other details. Some takeaways.
+            - Go and native code, designed for parallelism, efficient memory usage since compilers are mostly O(n) and thus memory access between AST passes become a concern.
+            - Won't include expensive features like TypeScript type-checking support. Which makes sense, that's why typescript-go is a fully separate project and rewrite, to be used in tandem with something like esbuild. Typechecking has become a separate part of the toolchain and workflow for frontend developers, at this point.
+        - Also see [esbuild architecture.md](https://github.com/evanw/esbuild/blob/main/docs/architecture.md) for some high-level picture of the "scan phase" and "compile phase" — basically, local and global interactions + parallel chunking. Will be interesting to compare with typescript-go, since that may have more global interaction.
+            - How do you parallelize when typechecking over a whole codebase, with a complex type system? Maybe a "query"-based structure, like Rust's Salsa?
+        - Ok, onto typescript-go (TS 7 / Native TS). Will first try to build it.
+            - The tooling seems a bit jank, they have TypeScript upstream as a submodule, and the task runner `hereby` has a thousand lines of glue code for developer tasks. Hmm, well let's not judge before we actually try building it.
+            - Ah, I found why Rust is needed as a build dependency. [libsyncrpc](https://github.com/microsoft/libsyncrpc) is a small library that's used by the typescript-go JS API to communicate with its Go subprocess.
+                - Strange that this tiny shim is what's written in Rust. Why not write it in Go as well, or just in JavaScript? Maybe it's performance-sensitive, and Rust supports napi better than Go? Anyway, we'll find out if it's actually important for perf soon.
+            - Going to time `npx hereby build` now. Only a couple Go dependencies, nice.
+                - real    2m41.685s
+                  user    5m46.611s
+            - Not bad, honestly! Go compiler is fast and parallel. By far the largest folder in the codebase is `internal/` (240K LoC), which I assume has the implementation of the actual bulk of the compiler. Looks to be a 10-ish person project from commit history.
+            - First time running built/local/tsgo, and the CLI looks very similar to tsc, down to every line of help text. I guess that makes sense, it's as much as possible a direct port.
+        - What's a good benchmark for tsgo? Maybe I'll run it against date-fns first, that seems pretty straightforward and a simple codebase.
+            - ubuntu@ip-10-1-4-234:~/date-fns$ time ../typescript-go/built/local/tsgo 
+              
+              **real    0m1.332s**
+              user    0m11.057s
+              sys     0m1.433s
+              
+              ubuntu@ip-10-1-4-234:~/date-fns$ time npx tsc
+              
+              **real    0m5.613s**
+              user    0m11.138s
+              sys     0m0.484s
+        - Alright, so that's pretty interesting. There's around the same total CPU time spent in both versions of TypeScript, but the native one is much more parallel. I can't reproduce quite as good numbers as we saw in the [blog post](https://devblogs.microsoft.com/typescript/typescript-native-port/) (6.5s vs 0.7s), at least on Ubuntu.
+        - Going to just start with the `flamegraph` command from cargo-flamegraph as before, since it's convenient. But I don't know if built/local/tsgo has debuginfo or symbols.
+            - Oh that produced a very awful flame graph, just Go runtime spans. Probably it doesn't follow the forked worker threads. Let's try using go pprof instead.
+            - This is in the command somehow, see internal/pprof/pprof.go. Use `--pprofDir pprof`.
+                - CPU profile: /home/ubuntu/date-fns/pprof/2669572-cpuprofile.pb.gz
+                - Memory profile: /home/ubuntu/date-fns/pprof/2669572-memprofile.pb.gz
+            - Nice, we can open these in [speedscope.app](https://www.speedscope.app/).
+            - You can also open the pprof UI, it's my first time using that tool. Hmm, interesting http server for visualizing flame graph and graph. I find the graph a bit hard to use, flame graph seems to give a better overview, but maybe for some less-hierarchical codebases the former graph layout might be nice.
+                - pprof UI also shows the source+binary disassembly and so on, I'm less interested. Lots of internal runtime spans, probably would be better for C/C++.
+            - Memory profile – notably, spends tons of memory on package.json, over half of a gigabyte. That's pretty insane. I guess the file is like 7000+ lines of locales and other metadata. ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2F8RUPobZclR.png?alt=media&token=41eb3f8f-5345-4dd7-aa24-7827a79d0a64)
+            - CPU profile – likewise has 55% of time spent on package.json parsing, okay this is probably why my benchmark doesn't match theirs. The interesting parts are parseSourceFile(), which uses internal/parser.go *Parser object, and checkSourceFile(), which uses internal/checker.go *Checker object. ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2FIrabGu3lKl.png?alt=media&token=1b7b43ab-1fad-4013-b700-87d34b519945)
