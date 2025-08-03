@@ -1,0 +1,36 @@
+- SSA Book (Aug 2025)
+    - Intros: SSA means every name gets assigned once, and ɸ function runs in parallel at the head of basic blocks as a __pseudo-assignment__ for merging variables.
+    - Intuitively, SSA took over the world because it simplifies dataflow analyses. Instead of marking properties of each variable at every code location, you only need to deduce facts of variables once, at the location where they are assigned. (sparse dataflow)
+        - Dataflow information __propagates directly__ from definitions to uses. (__def-use links__)
+        - Results of dataflow analyses are __more succinct__.
+    - Def-use and use-def chains, link definitions to usages. SSA reduces x*y links to x+y links.
+    - __Minimality property__ - for SSA construction, minimize the number of phi() functions inserted. The two-phase construction algorithm has this property.
+        - Let's work within nodes of a CFG here.
+        - __Join node__, for two nodes a and b, is node n such that if there exist two nonempty paths from a->n and b->n, such that n is the only node along both of those paths.
+            - In other words, join nodes are places where two code paths meet.
+            - __Join set:__ J(S) = {join node of a and b | a, b in S}
+        - Intuitively, you place ɸ-functions at the join sets of all definitions of a variable v, and this guarantees minimality. Classical techniques also include the entry point in the join set, which inserts more ɸ's ("there are good reasons for this" – see Strict SSA).
+    - __Strict SSA form__ - every variable is defined before it is used.
+        - Under SSA, this means that uses are dominated by their definition. From the entry point, you must reach a definition of v before any use of v.
+        - "a dom b" ~ dominance, and "a sdom b" ~ strict dominance (a != b).
+        - You can get strict SSA by inserting (v = undefined) at the entry point for every variable. That's why join sets sometimes include the entry node.
+        - With strict SSA, you get the immediate dominator (idom), which is the unique node that dominates each CFG node, and can construct a __dominator tree__. Then the live range of each variable is its subtree in the dominator tree, which can be queried efficiently.
+        - You might want this to compute interference / non-overlapping variables. Also, the intersection ranges form a __chordal graph__, which can be colored in linear time, that's great for optimal register allocation.
+        - Note that the dominance property can be broken by const propagation, needs repair.
+    - __Pruned SSA form__ - remove ɸ-functions that never get used, or are dead, which happens if a variable gets assigned in two peer places and not used afterward.
+    - ɸ-webs are partitions of local variables that are related to each other by a ɸ-function. This is the granularity of non-SSA register allocation. When pruned, each ɸ-web has exactly one variable live at any given time.
+        - __C-SSA (conventional SSA)__ - each ɸ-web is interference free.
+        - __T-SSA__ - can have interference between variables in ɸ-web, makes it harder to "destruct" the SSA because you can't just replace each web with a reassignable variable name.
+        - To convert from T-SSA -> C-SSA, you insert copy operations to remove interference. This provides a "more accurate" view of resource usage / how many variables are actually live at any given time.
+        - "most current compilers choose not to maintain the conventional property"
+    - In LLVM, they generated pruned SSA form. `phi` operation in LLVM is a ɸ-node, which is generated from alloca instructions during the mem2reg pass ([Godbolt example](https://godbolt.org/z/dfnPW93EP)). It turns locals into LLVM registers (%) in SSA form, which can then have machine register allocation.
+    - Chapter 3: Standard Construction and Destruction Algorithms
+        - Note: [mem2reg](https://llvm.org/docs/Passes.html#mem2reg-promote-memory-to-register) uses this: "just the standard SSA construction algorithm".
+        - There are some alternative algorithms that are more efficient, but they're also more complex. The "standard" ones remain popular.
+        - Dominance frontier DF(n) is the set of nodes v where n doesn't dominate v, but n dominates a predecessor of v — this is the "1 past the boundary" of what is dominated by n.
+            - If you iterate the dominance frontier, DF+(n), you can compute DF+(Defs(v)) and insert phi-nodes there. This is equivalent to join set, since DF+(Defs(S)) = J(S || {r}).
+            - Standard algorithm involves a DFS over DF edges, iteratively adding ɸs.
+            - DF is straightforward to compute from the dominator tree with join-edges (edges from CFG not in dominator subtree tree), a.k.a., the DJ graph. For every join edge a->b, just add it to the dominance frontier while walking up the tree from a. ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2FUqGDcu-Jo-.png?alt=media&token=ba7722f1-37fe-4fbc-b2e1-b27961ec47a2)
+        - For the construction, second phase is renaming, keep track of "reaching definition."
+        - There are alternative linear-time construction algorithms (Sreedhar and Gao, 1995), described in Chapter 4.
+        - ɸ-webs are discovered with union-find or DFS, and then the "critical edge splitting" destruction algorithm splits up edges from nodes with multiple successors, to nodes with multiple predecessors. Also you need to linearize "parallel" ɸ assignments.
