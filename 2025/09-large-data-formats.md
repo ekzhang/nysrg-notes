@@ -1,0 +1,68 @@
+- Large data formats (Nov 2025)
+    - Parquet
+        - Magic number, followed by a list of "row groups." Each row group (configurable, 128 MB default, can be up to 1 GB for high read throughput) stores a set of columns (equal length), each column is broken up into pages (default 1 MB).
+        - Metadata is written at the end of the file (version, schema, type) to allow for single-pass writing. This means that reads need to backward scan from EOF.
+        - Data types: Int32, Int64, Bool, Float32, Float64, Bytes, Fixed len byte array.
+        - Pages have a compression code (zstd, snappy, lz4), and encoding (plain, RLE, delta, dictionary, or byte stream split). They also have column metadata for definition levels (optional fields) and repetition levels.
+        - Delta encoding: https://arxiv.org/pdf/1209.2137v5
+        - Each page can be encrypted and/or checksummed, will omit the details for now, allows for better failure recovery.
+        - How to concatenate files, or add rows? Hard.
+        - How to read a column? Go through every row group, read the column one page at a time. Supports "predicate pushdown" — fancy word that means a query optimizer can turn a full table scan into a column scan.
+        - How to read a few rows? Find the row group, find indices for each column, read the page that the row's data is in for each column.
+        - https://docs.rs/parquet/latest/parquet/column/index.html
+    - Arrow
+        - Basically just the only in-memory format you need, columnar storage, also concatenate variadic fields like strings.
+        - Reduces copying since every library agrees to use Arrow's format.
+        - Makes it easier to create libraries and databases, since you can use Arrow's optimized library of primitives (e.g., SIMD vector operations).
+    - Hardware trends - object storage (S3/GCS)
+        - Object storage is great, infinite throughput / capacity and very reliable to manage.
+        - Other systems like WarpStream (Kafka on object storage) have this same shape, much easier to manage and better throughput, but has a bit of latency penalty.
+        - This is what people mean when they call stuff a "data lake" — and then "lakehouse" is like structured querying and libraries on top of the lake.
+    - Lance / Vortex
+        - https://lancedb.com/blog/lance-v2/
+        - https://docs.vortex.dev/concepts/arrays
+            - https://docs.rs/vortex/latest/vortex/vtable/trait.VTable.html
+            - "Layout" is described by the user, can involve either local or remote storage, various forms of chunking. So it's kind of like, building your own data format with the customization that you get.
+        - Regarding claims like "10x faster scans, 5x faster writes" — don't think too much about it, probably just some marketing material. Could get this benchmark with various kinds of optimizations / reducing overheads, modern compression.
+        - The file formats themselves are not __substantially__ better, maybe just targeting specific cases (random writes, wide rows like vectors and media).
+        - Perhaps it's not too inspiring. I guess Parquet is "good enough" in some ways.
+        - Actual benefits: Faster at random access, GPGPU compute, and better query engine / DB parts like predicate pushdown and fine-tuning storage to the data characteristics.
+    - Other data formats
+        - Smallpond: example tiny framework (Spark alt) that companies might build on top of NFS and data tools https://deepseek-ai.github.io/smallpond/api.html#high-level-api
+        - Lots of functional programming ideas in data processing, especially in low-level APIs. Whether that's Spark or something else, you don't need to rely on optimizations like "predicate pushdown" if the programmer just handles it themselves!
+            - In general, one way to think about data queries is as structured transformations, like building a logical plan within a database.
+            - It hides the complexity of distributed scheduling, fault tolerance & I/O.
+        - Why GPUs? Unclear what the importance is currently, but GPGPU is something people are thinking about in these formats, probably since networking is getting fast.
+    - Tiktoken / BPE
+        - Very nice and reviewable/correct implementation of BPE, including an educational one.
+        - There are simple, basic regexes for initial pre-tokenization that converts text into words based on heuristics (see [pat_str](https://github.com/openai/tiktoken/blob/main/tiktoken_ext/openai_public.py) in the registry).
+        - Special tokens are handled separately and initially by another regex-based substring matcher at start time, so they don't get clobbered by any other matching rules.
+        - Once that's done, the Rust code precomputes "ranks" for each pair of adjacent indices i..i+2 and iterates them to find the lowest rank in the word. It merges that rank, while recomputing ranks for merging i-1 and i (folding i+1 into i). This is faster than recomputing ranks for all indices on each iteration.
+        - Pretty straightforward, it is O(n^2) but that's ok since the pre-tokenization already makes word-based chunks pretty compact. Parallelism is by non-GIL Python threads.
+        - You can draw parallels with dictionary compression algorithms like Brotli or Zstd. Tradeoff between vocab size and efficient representation.
+    - Harmony renderer
+        - Turns structured data (storage, main format) into text that can be passed into LLMs. Tokenizes media / allocates space for it. Inserts special tokens between text, likely some lossy encoding involved here.
+        - Needs to escape special tokens so that users can't inject them haha.
+        - Tool calling and JSON constraints are part of the renderer as well, I guess this defines the special tokens + response format used by the model, and then the model is fine-tuned to respect or follow those system instructions.
+    - cuDF
+        - Nvidia's interested in helping data scientists run their Pandas/Polars code faster, unedited. Just plug in the Nvidia GPU and see things accelerate.
+        - So cuDF is an implementation of that, it may not be the fastest way to run operations (versus JAX/PyTorch), but it will have good drop-in support for most things and fits into the data science workflow. RAPIDS is the general project including scikit-learn compatibility.
+        - Note that the operations may fall back to CPU for unsupported wrappers. So it seems like the data buffers still live on CPU, and you're going to be limited by CPU<->GPU link bandwidth (NVLink 50 GB/s, PCIe 32 GB/s).
+            - Still a ton, and it's going to accelerate even elementwise ops!
+            - Unless you have a ton of cores and set up NUMA properly. Remember that most things are compute-bound on CPU, that's why SIMD vector ops exist.
+        - For neural networks though, obviously cuDF isn't the right tool. It's probably not going to take advantage of tensor cores mostly (except where cuBLAS might be used as a subroutine for various ops).
+        - A dataframe library backed by CUDA cores, standard parallel programming model.
+    - Why is Polars so fast?
+        - Hmm, if you read the Polars code, everything looks to be implemented in quite ergonomic Rust. It's a complex library with good docs and code structure. I'm actually surprised how much they use closures and standard Rust / Rayon iterators (+ par_sort()) to back operations that aren't handled by Arrow.
+        - Series (untyped) / ChunkedArray (typed) is the core data type, which wraps polars-arrow types, and eventually you get all the way down to an Arrow array (via FFI calls).
+        - Basically, the speed comes from: good code and relying on Rust ecosystem, automatic multithreading (polars is threads=1), Arrow memory format by default, and lazy query plans to enable streaming + predicate pushdown + projection pushdown.
+            - Kernels are implemented in polars-compute as traits for various dtypes.
+            - Layering: Operations go to polars-plan (logical planning), which are then optimized (OptimizationRule) and converted to polars-expr (physical plans), which are finally executed by kernels.
+                - Logical planning consists of `DslPlan` -> arena-allocated `IR`, which also contains `Expr` -> arena-allocated `AExpr`. Optimization rules transform the arena-allocated variants of both so you don't have a bunch of allocation and memory fragmentation.
+                - Eventually, the arena-allocated IR plan gets sent to `create_physical_plan()` and recursively converts logical nodes into physical executors.
+                - Logical expressions are lowered in parallel to physical (polars-expr).
+            - Lazy API has a `describe()` function to inspect the query plan.
+        - It's just a good, well-written library! Not much else to say here. The magic is that they implemented foundational building blocks very well and put them together.
+    - DuckDB storage format
+        - Oh wow, it stores data in row groups like Parquet. The default is 122,880 rows. I wonder if these are honestly more like column chunks though…
+        - Hmm, parallelism is on the row-group level. This makes sense, you don't want to use a new thread unless your dataset is sufficiently large. I guess thread communication and startup overhead is around the same order of magnitude as 100k scalar ops.
