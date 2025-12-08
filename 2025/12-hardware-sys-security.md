@@ -1,0 +1,25 @@
+- Hardware systems security (Dec 2025)
+    - Compiler explorer
+        - Pretty standard architecture with a frontend, Node.js servers, and a compilation queue processor that runs things in nsjail.
+        - Compile workers have 4 TB of compilers installed on them, mounted on EFS.
+        - Also, compilers require a lot of tiny runtime files, this is slow for EFS. To get around this, they build squashfs (compressed) images for each of those files in EFS, and then mount them on the workers as well, as loopback block device mounts — this prevents Linux from repeatedly doing metadata validity checks in NFS.
+            - Pretty standard hack for reducing NFS latency: group your files into bigger chunks. And then set up read-only caching (à la JuiceFS or Modal).
+        - Looks like they get about 3 req/s for compile, which is quite a fair bit! Not too much load though, so the support for a bajillion compilers is the main technical feat. Like serverless technology where you need to support a bunch of sparse endpoints.
+        - Auto-scaling and caching, everything keeps costs down to $3000/mo, nice.
+        - Seems super organic, nice to see a project grow and come about like this.
+    - Figma's blog post on seccomp
+        - Practical considerations on eng cost: "To create the seccomp allowlist, you need to either know all possible syscalls that the program can make, or more typically, empirically construct this list by running the program with a tool like `strace` on a representative corpus of inputs to exercise all possible codepaths."
+        - seccomp allowlists may be brittle and need updates from people outside security org.
+        - Can't dereference pointers in seccomp filters, so filtering openat() is impossible for instance as it takes a directory file descriptor.
+        - They used nsjail and trialed pure-seccomp for their "RenderServer" (editor session backend) but ran into lots of edge cases in a production system.
+        - Worth noting that seccomp itself is much faster, more lightweight than nsjail, easier to test.
+        - Trick: Open all your files beforehand, then enter the sandbox.
+    - Optimizing seccomp in gVisor
+        - Small gains in seccomp-bpf by checking for non-cacheable syscalls first (Linux kernel emulates cacheable ones and stores them in a static map), and creating a binary tree instead of linear scan of jumps for instruction filtering.
+        - They can also reduce code size with instruction-level optimizer. cBPF is limited to 4096 instructions, so this will allow them to add more rules in the future.
+        - Remember that futex() is the most common syscall by far, followed by nanosleep and sendmmsg (for this distributed system I/O benchmark).
+    - rust-vmm/seccompiler
+        - Some more details on seccomp, installed via `prctl()` or `seccomp()`.
+        - I searched this up a bit, once you enter seccomp mode on a process, you can't disable or relax it again. You can only install more filters with logical AND (stricter).
+        - `seccomp()` is the modern API (Linux 3.17+), prctl is legacy cruft.
+        - Didn't work in Orbstack, but i got it working in a quick [Codespace with this code](https://gist.github.com/ekzhang/12a0456a5e196375e76b06c7446191f9).
