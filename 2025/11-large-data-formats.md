@@ -48,7 +48,7 @@
         - Nvidia's interested in helping data scientists run their Pandas/Polars code faster, unedited. Just plug in the Nvidia GPU and see things accelerate.
         - So cuDF is an implementation of that, it may not be the fastest way to run operations (versus JAX/PyTorch), but it will have good drop-in support for most things and fits into the data science workflow. RAPIDS is the general project including scikit-learn compatibility.
         - Note that the operations may fall back to CPU for unsupported wrappers. So it seems like the data buffers still live on CPU, and you're going to be limited by CPU<->GPU link bandwidth (NVLink 50 GB/s, PCIe 32 GB/s).
-            - Still a ton, and it's going to accelerate even elementwise ops!
+            - Still a ton, and it's going to accelerate even element-wise ops!
             - Unless you have a ton of cores and set up NUMA properly. Remember that most things are compute-bound on CPU, that's why SIMD vector ops exist.
         - For neural networks though, obviously cuDF isn't the right tool. It's probably not going to take advantage of tensor cores mostly (except where cuBLAS might be used as a subroutine for various ops).
         - A dataframe library backed by CUDA cores, standard parallel programming model.
@@ -62,7 +62,37 @@
                 - Eventually, the arena-allocated IR plan gets sent to `create_physical_plan()` and recursively converts logical nodes into physical executors.
                 - Logical expressions are lowered in parallel to physical (polars-expr).
             - Lazy API has a `describe()` function to inspect the query plan.
+            - Polars can have more flexible advanced APIs since it doesn't need to "invent" SQL syntax to support them, for instance, rolling groupby.
+        - They have blog posts about parallelism, fast vectorized data formats / storage (e.g., ArrowStr series) and hashing to avoid communication overheads in various compute kernels. Just done very well.
         - It's just a good, well-written library! Not much else to say here. The magic is that they implemented foundational building blocks very well and put them together.
     - DuckDB storage format
         - Oh wow, it stores data in row groups like Parquet. The default is 122,880 rows. I wonder if these are honestly more like column chunks though…
         - Hmm, parallelism is on the row-group level. This makes sense, you don't want to use a new thread unless your dataset is sufficiently large. I guess thread communication and startup overhead is around the same order of magnitude as 100k scalar ops.
+        - [Internals](https://duckdb.org/docs/stable/internals/overview) docs are very concise and a good overview of all the passes.
+    - Vector databases
+        - Introductions from Pinecone employee
+            - At a high-level, grab a bunch of vectors (embedding model outputs, 768/1536-dimensional vectors) and then do nearest neighbors or cosine distance search on them.
+            - Custom indices that allow you to do this. It started as just a single file, indexing, and then a hosted compute model. Launched in 2019.
+            - But eventually this got very expensive, moved to serverless over storage rather than pods, put a lot of effort making that fast & cost-effective / more scalable.
+            - Explosion in usage after 2023, when "RAG" took off, some traffic from recommender engines and other AI work.
+            - What are the system requirements?
+                - There are few different kinds of customers, like AI companies or RAG apps.
+                - Long tail of distributions of workloads. Either having not much data and lots of traffic, or having lots of data and not much traffic. Say, 95% of Notion users (partitioned indices) don't actually have data being accessed, lots of partitions, serverless.
+                - But __recommender systems__ are a much more static dataset, like an online storefront (Amazon), with much higher query traffic. Semantic search is also different.
+                - Loading and unloading very partitioned indices is important for user-level vecor search, and that's why multi-tenancy and scaling to zero is nice.
+        - Pinecone archiecture https://www.pinecone.io/learn/slab-architecture/
+            - L0 is memtable / just brute-force search, L1 is 10k-1m vectors (FJLT projections / compression), L2 is 1m-100m vectors (IVF clustering), and then there's something else for L3. With more vectors, it becomes safer to look at less of them.
+            - Architecture decouples indexing (research, geometry) from systems (files and distribution), slabs and object storage concerns!
+            - Search in one slab is totally decoupled from that in other slabs.
+            - Everything is just Parquet files in each slab, as a raw data format. Then the indices are built up on top of it.
+            - With IVF, you can do 30-40M vectors. After that you need replication. Next step would be to add "graph indexing" (HNSW-like), which is scalable to larger datasets.
+            - https://www.cs.princeton.edu/~chazelle/pubs/FJLT-sicomp09.pdf — this is just a JL random projection but sparse, 1/sqrt(d) of the entries in the (k x d) projection matrix is actually nonzero. But you add a FWHT (Hadamard matrix) to mix things up.
+            - The IVF in pgvector is just a k-means algorithm, makes sense. You have some heuristic for k, initialize the centers with another heuristic, and then (in the case of Pinecone) keep things immutable in slabs until compaction.
+            - https://alex-jacobs.com/posts/the-case-against-pgvector/
+        - Vector indexing thought experiment
+            - You can always do low-distortion embeddings, this is mathematically guaranteed to be fine (within epsilon~1%, etc.). It will reduce the constant factor (FLOPs time), just like what SIMD will do. Clustering is more sketchy though ("ignoring" some clusters), and that's when you need graph algorithms like HNSW (still randomized).
+            - Quick explainer https://www.pinecone.io/learn/series/faiss/hnsw/
+            - Hmm, yeah this makes sense. Also the slabs / compaction system are optimized for backing by object storage, since they are immutable. (Just as LSM trees are optimized for coherent disk access.)
+            - The vector indices themselves need to be tuned, and they have certain requirements / constraints. Everything else is a systems and engineering task over time.
+            - Filtering needs to be done in stages as well. If you think about vector indices in a Postgres / pgvector integration for example, you EXPLAIN the query and see whether the vector index is used or not, then the filter needs to be done before / after.
+            - It was brought up by Greg that in some ways, HNSW is kind of like iterated IVF, each level is its own kind of cluster index setup, and you stochastically build it.
