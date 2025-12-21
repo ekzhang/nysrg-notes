@@ -23,3 +23,28 @@
         - I searched this up a bit, once you enter seccomp mode on a process, you can't disable or relax it again. You can only install more filters with logical AND (stricter).
         - `seccomp()` is the modern API (Linux 3.17+), prctl is legacy cruft.
         - Didn't work in Orbstack, but i got it working in a quick [Codespace with this code](https://gist.github.com/ekzhang/12a0456a5e196375e76b06c7446191f9).
+    - seL4
+        - Three things that make it more expensive to develop: Microkernel, capability system, and formal verification. Formal verification is particularly costly, O(n^2) to lines of code.
+        - Design principles are interesting: trying to be minimal, pragmatic (balancing systems concerns), not providing any hardware abstraction. But being correct in what it does support ("foundations for secure systems"), like a scheduler.
+        - "Don't shoot yourself" not being a goal of the kernel, hmm…
+        - Q: Are there capability-based systems that are not microkernels?
+        - Capabilities versus ACLs, compare to Google Docs email sharing versus share links. Analogy holds but there are advantages to capabilities (transferability, cryptographic signing) and also to "traditional" ACL systems (auditability, know "who" / which user is accessing a resource is important).
+    - Fuchsia
+        - https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/zircon/kernel/ — Here is the main Ziron kernel source tree, seems to be written in C++. Standard OS kernel stuff here like a scheduler, spinlock and other components.
+        - In the src/ folder there are the main user-space components outside of Zircon, these are written in Rust and C++. Since it's a microkernel, most of this is outside of Zircon.
+        - Here is the ext4 file system entry point, it starts a "fidl" IPC server: https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/storage/ext4/server/src/main.rs
+            - This is specified with a static CML file that has its manifest, what capabilities it uses: https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/src/storage/ext4/server/meta/ext4_readonly.cml?autodive=0%2F%2F
+        - I guess you communicate between processes by listening on fidl channels. https://fuchsia.dev/fuchsia-src/get-started/learn/fidl/fidl
+        - [Driver examples](https://fuchsia.dev/fuchsia-src/development/drivers/developer_guide/driver-examples) — looks like there's a "parent driver" and then child drivers, and then they can communicate with each other. Just hypothesizing, but there might be a board driver, and then it fans out with different memory regions allocated to child drivers that give each other appropriate capabilities / this limits surface area.
+        - [Bootloader](https://fuchsia.googlesource.com/fuchsia/+/refs/heads/main/zircon/kernel/phys/physboot.cc) is called physboot, part of the Zircon kernel folder.
+    - Moving on to the [Linux kernel hacker meets Fuchsia](https://a13xp0p0v.github.io/2022/05/24/pwn-fuchsia.html) blog post
+        - Context: Fuchsia runs on Nest Hub devices. Development started in 2016.
+        - There is "no concept of users," it's capability-based. Good diagram from the hacker blog post, summarizes which components live in Zircon. Note that seL4 also moves memory management out of the kernel (see discussion about page tables).
+        - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2FTV1l9PtHYO.png?alt=media&token=b55b26c5-414e-442a-9e6a-ea484c37e15f)
+        - "Finally, Fuchsia has an unusual scheme of software delivery and updating. Fuchsia components are identified by URLs and can be **resolved, downloaded, and executed on demand**. The main goal of this design solution is to make software packages in Fuchsia always up to date, like web pages."
+        - Exploit of a "synthetic" use-after free vulnerability (PoC), talks about how he finds a way to exploit it in practice. Not a real zero-day but exploring the system, how you could exploit something if you had a real bug.
+        - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2F-X2jkXMY9q.png?alt=media&token=434a65f1-20ce-4bce-abaa-d99072d63e9c)
+        - "Heap spraying" as an attack vector to just randomly get access to the freed memory area and guess the kernel memory layout.
+        - Lack of KASLR, easier to construct payloads due to static function offsets.
+    - Holiday-time events
+        - Chaos Computer Club in Boston
