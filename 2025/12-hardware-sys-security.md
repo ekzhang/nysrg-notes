@@ -48,3 +48,37 @@
         - Lack of KASLR, easier to construct payloads due to static function offsets.
     - Holiday-time events
         - Chaos Computer Club in Boston
+    - GPU confidential computing (2026)
+        - In confidential computing, the memory encryption isn't the main point, it's having a memory region protections to ensure that only the guest can actually access certain portions of RAM. Also setting up encrypted channels from the client to the outside world (TLS).
+        - Host is responsible for preventing VM from using too many resources, etc., but also it's part of the threat model!
+        - Any time you have cryptography, you have side channels, so the host might be able to spy on the guest by using attacks like Spectre/Meltdown (speculative execution), or non-constant time operations that can leak small amounts of data about a secret.
+        - The host is able to probe information about the cache of the guest at a very high granularity (even pausing each instruction), this is dangerous!
+            - Adversary host could like, unmap all of the guest's pages and trigger a bunch of page faults, reveals data-dependent execution details of a server like vLLM that's running within the host. This could include user data.
+        - Mitigations against Spectre, fencing after every conditional/indirect jump, are not great.
+        - According to Tjaden the encryption is pretty junk. "If you put an interposer on the DRAM bus" then you can record traces with a trace analyzer and steal the root attestation key from the SGX enclave. (Not true of AMD though, the root computations run in a separate ARM64 processor embedded on the die using SRAM.)
+            - Intel TDX = whole VM, while Intel SGX = inter-process secure enclave.
+            - Chain of trust, need to inject CA into the code. Also there's a key with the device-specific key, organized by chip and firmware version, ratcheted on updates.
+        - FHE - "You get all this __extra structure__. Extra structure is dangerous."
+        - Bit error rates happen when GPUs are too hot, be careful!
+        - General feeling is that all of the new components that Nvidia designed for the GPU-CC modules are a bit sketchy. People are skeptical about the security of the implementation of these complex protocols especially with side channels from a host adversary, and we'll see whether CC becomes more popular.
+        - "It's the only way to get confidential GPU programming right now."
+        - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2F999OKDk8bN.png?alt=media&token=d93340d1-0677-49ad-b6fd-e428af62d6a7)
+        - Actual data in private memory is not encrypted, staging buffer between CVM (CPU enclave) and GPU is encrypted though. Until TDIS.
+        - Recent blog posts from AWS about their evolution of Nitro, "more robust than other solutions right now" with formal verification and custom hardware support.
+    - VFIO
+        - IOMMU chip is able to isolate memory accesses from a device (device-specific address space), especially important for DMA — but also I/O access, interrupts.
+        - Container > Group > IOMMU device. Each has an associated VFIO concept.
+        - A single group is hardware-enforced isolation, you need to get all the devices at once. They can DMA into each other's memory (err, cross-group DMA is also possible but only through host memory mapping). Containers share a page table.
+        - You can put groups into different containers! This is good.
+        - You can speak directly to the device from a userspace device hypervisor like QEMU that emulate devices. It gets an interrupt from guest kernel -> host userspace control flow.
+    - ReDMArk (RDMA security)
+        - The RDMA spec has access tokens for isolation / prevent unintended access, which are only sent over plaintext over the network. Unfortunately the network is not secure. IPsec for RoCE recently became available, but IPsec doesn't support Infiniband (uh oh).
+            - Also IPsec obviously has throughput limitations since it costs CPU to do the encryption. Would affect achievable throughput.
+        - This paper focuses on IB and RoCE, the two most widely used interconnects.
+        - RoCEv1 has an IB header encapsulated in Ethernet, while RoCEv2 relies on UDP/IP framing, in some sense RoCEv2 wire protocol "goes over UDP."
+        - Interesting description of adversaries: on a different host (issue normal messages), a privileged injector of forged messages, and someone who can actually listen to traffic on the path between victim and service.
+        - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2Fuu8qjOp4YP.png?alt=media&token=a3b5e463-2c32-4c5d-8411-023c1f076bed)
+        - All RDMA read/write requests need an access key `rkey` negotiated by peers, this is checked by the NIC itself and can't be disabled. But there's not much entropy it seems, attackers can guess this value.
+        - It goes over various attacks: DoS over QP exhaustion (24-bit number), unauthorized access via packet fabrication, etc.
+        - Azure has cross-datacenter region RDMA? wtf? https://www.youtube.com/watch?v=Dcq_AwnfArI
+        - https://blog.aenix.io/the-evolution-of-network-virtualization-technologies-in-linux-6ba3a4e9f293
