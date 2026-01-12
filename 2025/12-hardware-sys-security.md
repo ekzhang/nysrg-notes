@@ -73,12 +73,13 @@
         - A single group is hardware-enforced isolation (IOMMU feature), you need to get all the devices at once. Meanwhile, devices with page tables (host mapping) can access each other's memory through if they are in the same __VFIO container__ (shares page table).
         - You can speak directly to the device from a userspace device hypervisor like QEMU that emulate devices. It gets an interrupt from guest kernel -> host userspace control flow.
         - https://blog.aenix.io/the-evolution-of-network-virtualization-technologies-in-linux-6ba3a4e9f293
-        - Figuring out some things about virtualization:
-            - Virtio is the paravirtualized device driver abstraction over individual devices.
-            - vhost is an in-kernel implementation of some virtio devices.
-            - vhost-user is a backend for virtio devices that sends their operation queues (virtqueues) to a userspace daemon process for processing (like vhost-user-fs -> virtiofsd).
-            - VFIO is literally just PCI passthrough to the guest, no host involvement.
-            - vDPA is another vhost backend (vhost-vdpa) that is implemented by a device itself; the device directly processes virtqueues from a guest virtio driver.
+            - VFIO = direct device DMA passthrough to guest (virtio-pci) via IOMMU group isolation, host is not involved — what we were reading about
+            - virtio = paravirtualized device drivers, e.g., virtio-net, virtio-blk, provides standardized interface for guest and host (virtqueue of ops from guest)
+            - vhost = let the host kernel handle virtio requests (virtqueue) instead of implementing it yourself, e.g., vhost-net forwards directly. loses isolation properties for perf
+            - vhost-user = (confusing) actually again it's userspace handling of virtqueues. but now a __different__ process (not the hypervisor) gets to consume the virtqueues. example is vhost-user-fs served by virtiofsd
+            - vhost-mdev = idk, skipping this
+            - vDSA = another vhost backend (vhost-vdpa), which is a standard interface for __devices__ to implement virtqueue ops. it's like hardware building in support for the virtio interface instead of its own driver interface
+            - VDUSE = idk some confusing bytedance thing
     - ReDMArk (RDMA security)
         - The RDMA spec has access tokens for isolation / prevent unintended access, which are only sent over plaintext over the network. Unfortunately the network is not secure. IPsec for RoCE recently became available, but IPsec doesn't support Infiniband (uh oh).
             - Also IPsec obviously has throughput limitations since it costs CPU to do the encryption. Would affect achievable throughput.
