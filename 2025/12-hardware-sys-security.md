@@ -66,11 +66,19 @@
         - Actual data in private memory is not encrypted, staging buffer between CVM (CPU enclave) and GPU is encrypted though. Until TDIS.
         - Recent blog posts from AWS about their evolution of Nitro, "more robust than other solutions right now" with formal verification and custom hardware support.
     - VFIO
+        - This is a technology for presenting PCI devices to VMs.
         - IOMMU chip is able to isolate memory accesses from a device (device-specific address space), especially important for DMA — but also I/O access, interrupts.
-        - Container > Group > IOMMU device. Each has an associated VFIO concept.
-        - A single group is hardware-enforced isolation, you need to get all the devices at once. They can DMA into each other's memory (err, cross-group DMA is also possible but only through host memory mapping). Containers share a page table.
-        - You can put groups into different containers! This is good.
+        - VFIO Container > IOMMU Group > device.
+            - Typically a VFIO container is like the isolation for a single VM.
+        - A single group is hardware-enforced isolation (IOMMU feature), you need to get all the devices at once. Meanwhile, devices with page tables (host mapping) can access each other's memory through if they are in the same __VFIO container__ (shares page table).
         - You can speak directly to the device from a userspace device hypervisor like QEMU that emulate devices. It gets an interrupt from guest kernel -> host userspace control flow.
+        - https://blog.aenix.io/the-evolution-of-network-virtualization-technologies-in-linux-6ba3a4e9f293
+        - Figuring out some things about virtualization:
+            - Virtio is the paravirtualized device driver abstraction over individual devices.
+            - vhost is an in-kernel implementation of some virtio devices.
+            - vhost-user is a backend for virtio devices that sends their operation queues (virtqueues) to a userspace daemon process for processing (like vhost-user-fs -> virtiofsd).
+            - VFIO is literally just PCI passthrough to the guest, no host involvement.
+            - vDPA is another vhost backend (vhost-vdpa) that is implemented by a device itself; the device directly processes virtqueues from a guest virtio driver.
     - ReDMArk (RDMA security)
         - The RDMA spec has access tokens for isolation / prevent unintended access, which are only sent over plaintext over the network. Unfortunately the network is not secure. IPsec for RoCE recently became available, but IPsec doesn't support Infiniband (uh oh).
             - Also IPsec obviously has throughput limitations since it costs CPU to do the encryption. Would affect achievable throughput.
@@ -81,4 +89,3 @@
         - All RDMA read/write requests need an access key `rkey` negotiated by peers, this is checked by the NIC itself and can't be disabled. But there's not much entropy it seems, attackers can guess this value.
         - It goes over various attacks: DoS over QP exhaustion (24-bit number), unauthorized access via packet fabrication, etc.
         - Azure has cross-datacenter region RDMA? wtf? https://www.youtube.com/watch?v=Dcq_AwnfArI
-        - https://blog.aenix.io/the-evolution-of-network-virtualization-technologies-in-linux-6ba3a4e9f293
