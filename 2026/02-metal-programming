@@ -1,0 +1,16 @@
+- Metal programming — [[February 8th, 2026]]
+    - Create a Swift executable project, then you can start doing API operations after grabbing a GPU device from `MTLCreateSystemDefaultDevice()`.
+    - Graphics API is simple, similar to WebGPU.
+        - `device.makeBuffer()` - creates a sized GPU buffer, you can access the pointer
+        - `buffer.contents().bindMemory()` - view the buffer as a mutable array (note: Apple has unified memory so you can just write directly to the array)
+        - `SIMD2<Float>` is like a `vec2<f32>` type.
+        - `device.makeCommandQueue()` - create a command queue (stream) for op dispatch, similar to a CUDA stream, each runs operations asynchronously
+        - `commandQueue.makeCommandBuffer()` - create a set of commands
+            - `commandBuffer.makeBlitCommandEncoder()` - copy data between buffers
+            - `commandBuffer.makeComputeCommandEncoder()`
+            - `commandBuffer.makeRenderCommandEncoder()`
+            - `commandBuffer.addCompletedHandler { ... }` - run when it is done
+            - `commandBuffer.commit()` - dispatch instructions to GPU
+            - `commandBuffer.waitUntilCompleted()` - synchronously block until done
+        - MTKView - subclass of the View in AppKit / UIKit
+        - `kernel` refers to compute pipelines, they are dispatched in grids of threadgroups, similar programming model to CUDA.
