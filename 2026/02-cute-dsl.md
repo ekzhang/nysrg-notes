@@ -1,5 +1,6 @@
 - CuTe DSL (Feb 2026)
-    - Note that CuTe layouts are always column major!
+    - Note that CuTe layouts are column major by default!
+        - If you index a layout with a single index, it will be unraveled columnwise.
     - Start with the thread blocks and threads model, remember warp divergence and shared memory allocation and so on.
     - Elementwise kernel is slow without vector loads. Also, each thread needs to do a few operations (~16) for maximum performance. Might just be an artifact of the loading the scalar though (coalesced).
         - There doesn't seem to be vector elementwise multiply instructions in PTX. Adding higher vector multiply doesn't seem to really help.
