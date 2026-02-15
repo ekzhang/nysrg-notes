@@ -1,0 +1,11 @@
+- CuTe DSL (Feb 2026)
+    - Note that CuTe layouts are always column major!
+    - Start with the thread blocks and threads model, remember warp divergence and shared memory allocation and so on.
+    - Elementwise kernel is slow without vector loads. Also, each thread needs to do a few operations (~16) for maximum performance. Might just be an artifact of the loading the scalar though (coalesced).
+        - There doesn't seem to be vector elementwise multiply instructions in PTX. Adding higher vector multiply doesn't seem to really help.
+        - But the vectorized `ld.global.v4.f32` achieves higher throughput than just `ld.global.f32`, maybe optimized better at runtime.
+    - `cute.zipped_divide` / `cute.tiled_divide` are equivalent utilities (up to layout modes), and they let you assign each block a tile, and each thread within that block a value layout within the tile.
+        - Requires the layouts to be divisible by tile size, be careful.
+    - `cute.composition()` takes a cute.Tensor and a cute.Layout together and applies them, similar to `cute.make_composed_layout()` for layouts.
+    - It's a bit hard to write CuTe DSL code, the layouts can be kind of arcane and hard to use. One trick is to write a minimal `@cute.jit` function with a print statement and call it. Then you can develop within a tiny sandbox of sorts.
+    - `cute.compile(...).__ptx__` is available when `CUTE_DSL_KEEP_PTX=1`.
