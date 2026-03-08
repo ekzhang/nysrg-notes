@@ -1,0 +1,38 @@
+- Program analysis (March 2026)
+    - Fun discussion about LLM-optimized program analysis for better perf, creative optimizations.
+        - GenDB: Replace every component of a database with an LLM, lol. https://github.com/SolidLao/GenDB
+        - You probably need to generate proofs of correctness, or test cases as well! Otherwise optimizations from language models can't actually be checked against the original source code. Are they really the same?
+    - Vericoding paper
+        - Dataset of program proof / verification candidate, ~12k formal specifications. The idea is that this can be a benchmark for LLMs to train on, similar to MetaMath for math.
+        - Dafny, Verus, and Lean for writing proofs. Apparently the problem sources are kind of converted to these verification languages automatically and then checked for formatting, so a lot of this conversion was automated as well.
+        - Each problem is, "here's a theorem in context, fill in the proof".
+        - Some of this data pipeline: translate, check for triviality, use LLM as a judge, fix in a loop and append context each time.
+            - Paradoxically, the vericoding benchmark is not, itself, verified to be valid problems. :')
+        - LLMs are best at generating Dafny proofs, off-the-shelf.
+    - Kani in Firecracker https://model-checking.github.io/kani-verifier-blog/2023/08/31/using-kani-to-validate-security-boundaries-in-aws-firecracker.html
+        - "We found 5 bugs in our rate limiter implementation, the most significant one a rounding error that allowed guests to exceed their prescribed I/O bandwidth by up to 0.01% in some cases."
+        - From Kani / Firecracker: found a bug that lets guests use up to +0.01% more than prescribed resource limit. lol
+        - Maybe a brag that this is something that's almost impossible to find with tests. But also it's really impractical and basically a uint128 large integer edge case
+        - How it works
+            - Translate Rust's Mid-level Intermediate Representation (MIR) into a format compatible with the C Bounded Model Checker (CBMC). Then run SAT solver.
+            - Related: MIRI (MIR Interpreter) https://github.com/rust-lang/miri
+        - The devil's in the details
+            - How do you actually verify memory is pointing to the right place, in a ring buffer?
+            - mmap() calls get detected maybe?
+            - Check for overflows (classic symbolic execution task).
+    - Thinking about model checkers
+        - Hmm, you might view them as "state space exploration" perhaps.
+        - But in some cases, model checkers aren't exhaustive. They're more like structured fuzzers. Like Loom for examples, evaluate against many concurrency permutations.
+        - Meanwhile, Kani is exhaustive. "Since Kani uses model checking, Kani will either prove the property, disprove the property (with a counterexample), or may run out of resources."
+            - Kani uses symbolic execution and SAT solver. CBMC as symbolic executor.
+            - Often "this runs out of gas a lot - gotta give it more gas"
+    - FoundationDB
+        - Flow programming language - actor and future based model, message passing.
+        - Erlang/Elixir-esque model
+    - TLA+
+        - Leslie Lamport's magnum opus
+        - This is more like a theorem proving language (Lean/Coq) but used more for asynchronous and distributed systems.
+        - "Fundamental limit" to what you can check, combinatorial explosion.
+        - Proving might be used on a smaller scale, algorithms and data structures, whereas you can do realistic simulation testing for a larger / entire app.
+        - Example (verify Raft): https://github.com/ongardie/raft.tla/blob/master/raft.tla
+        - Interesting limitation, you don't have a way to specify that there is "1 unique output" of a program in TLA+. i.e., saying that a function is deterministic is a hyperproperty. https://www.hillelwayne.com/post/hyperproperties/
