@@ -26,6 +26,9 @@
         - Meanwhile, Kani is exhaustive. "Since Kani uses model checking, Kani will either prove the property, disprove the property (with a counterexample), or may run out of resources."
             - Kani uses symbolic execution and SAT solver. CBMC as symbolic executor.
             - Often "this runs out of gas a lot - gotta give it more gas"
+            - The way you write the tests in Kani uses an `Arbitrary` trait though, it just proves the property exhaustively over the domain of `kani::any()` values.
+            - Also `kani::assume()` can restrict domains.
+            - https://model-checking.github.io/kani/crates/doc/kani/index.html
     - FoundationDB
         - Flow programming language - actor and future based model, message passing.
         - Erlang/Elixir-esque model
