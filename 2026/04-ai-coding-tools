@@ -1,0 +1,9 @@
+- "AI coding tool" source code — [[April 3rd, 2026]]
+    - CC source code is surprisingly clean. Organized into several high-level groupings like "tools," "services," and so on, and the main "QueryEngine" groups everything together.
+    - Various fixtures for product testing like VCR.
+    - Everything seems to be built relatively quickly, selective attention paid to comments in places that seem complex. The rest is straightforward business logic.
+        - I think this is a good sign for a system like CC though. Even though it's lots of code, you can navigate the codebase relatively quickly by injecting stuff in the right points, and then you can continue scaling up your engineering effort from there.
+        - Most things are centered around query engine, which I guess is like a rollout loop.
+    - Each feature is like a couple thousand lines of code, makes sense. Files can get quite long but that's fine since startup should be fast, nice.
+    - Constants are leaked along with a lot of functions around here.
+    - Interesting, lots of telemetry to build a product like this. Also heard about some runtime-layer patches to compute checksums. Lots of reimplementations of tools and so on. Other ideas around how to build coding agents.
