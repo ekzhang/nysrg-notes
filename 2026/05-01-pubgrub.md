@@ -1,0 +1,14 @@
+- PubGrub — [[May 1st, 2026]]
+    - PubGrub works with a combination of ASP / CDCL (conflict-driven learning) with practical adjustments for package managers: heuristics to combine package ranges.
+    - You start with a root package, each dependency is a constraint ("incompatibility" / nogood) and then the algorithm repeatedly does as many __derivations__ as possible to figure out which pairs of package ranges are not compatible.
+        - The incompatibilities typically look like {A, not B} with certain versions.
+    - Compared to CDCL (variant: [CDNL](https://potassco.org/book/)), you have implicit constraints that each package has only one version, also you resolve packages through the tree.
+    - Transitive dependencies in a "diamond shape" are the hardest part.
+    - "The more I read this, the more I appreciate minimum version selection." :) - Go's approach is pretty clean, although you definitely get used to `go get -u`.
+    - Supply chain attacks: "don't install random packages off the street" haha. Capability systems? (Monte language)
+    - Package managers à la carte
+        - Tries to unify package manager specs across OS managers, language-specific ones, Bazel, and a couple oddballs like Unison and Nix.
+        - Version constraints, conflicts, concurrent versions, peer dependencies, features, package formula, virtual packages, variable formula, and optional dependencies.
+        - Surprisingly, peer dependencies is a very unique feature of the JS ecosystem. :D
+        - A lot of this is politics: every ecosystem makes its own package managers, and then this proliferates over time. But it's hard to deal with multi-language projects, like Rust+C and Python for an ML workload for instance, and what about Bazel?
+            - Famous example of circular dependencies and ecosystem issues: PyTorch<->Triton and messes up companies' Bazel trees, despite working in pip.
