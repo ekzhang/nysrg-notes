@@ -1,0 +1,29 @@
+- Low-level async in Zig — [[June 5th, 2026]]
+    - Zap - efficient thread pools
+        - https://kprotty.me/2021/09/12/resource-efficient-thread-pools-with-zig.html
+        - It's nice to have a really simple and self-contained implementation of a thread pool. Kind of a classic data structure, like you [implement one in Rust](https://doc.rust-lang.org/book/ch21-02-multithreaded.html#improving-throughput-with-a-thread-pool) as part of your learning (with mpsc channel + mutex), but this one is particularly optimized.
+        - Lock-free and also only one allocation per task, using an intrusive linked list. Common trick in kernel schedulers as well
+        - Fork/join model has some lineage to [Cilk](https://en.wikipedia.org/wiki/Cilk) work-stealing algorithms.
+        - Lock-free SPMC is interesting. The producer is easy, but the consumer needs to do atomic compare-and-swap operations. Also, typically work stealing steals _half_ of the available work, to amortize "cost of stealing."
+            - One run queue per thread in the pool. Note that run queues can contend due to the CAS, leading to another busy loop cycle.
+            - Head and tail sequence numbers with long wraparound detects conflicts.
+        - https://github.com/kprotty/zap/blob/blog/src/thread_pool.zig
+        - Interesting the usage of the `Sync` struct as well, which is packed into a single 32-bit word. It has some minimal state to avoid thundering herd: one thread wakes up at a time. Waiting/notifications is implemented with `std.Thread.Futex`.
+        - Futex is a 32-bit state: https://man7.org/linux/man-pages/man2/futex.2.html
+    - Stackful coroutines in Zig
+        - Does it have Go's problem where it doesn't interop with C well? (cgo)
+        - Apparently it also interop's with C fine, not sure how Zig solves this problem though. Io.Evented is still experimental for now.
+        - `io.concurrent` vs `io.async`, fun API to runtime assert for this capability.
+            - io.async - permits compiler optimization, inlining if the code is simple enough.
+        - Cancelation
+            - "It's funny that Unix processes and browser tabs are the only thing in your computer that you can cleanly cancel."
+            - You typically want to shutdown cleanly anyway, cancelation is tricky.
+            - Interesting that Zig provides a way to cancel futures - how does it work?
+        - Groups are cool - O(1) overhead for spawning N tasks, optimizes workloads with many async tasks. Wonder what the use case is, like really high-performance code.
+            - I guess one common use case is just a wait group.
+            - Fork into a bunch of tasks and wait for N futures to all complete.
+            - groupAsync() for example doesn't have N allocations, it does one allocation of a "Fiber" internal data structure.
+    - io_uring
+        - Lots of security vulnerabilities after introduction around 2019, but hopefully more stable and widely in use now.
+        - Breaks bpftrace because you can't introspect on read/write syscalls anymore. :(
+        - Interesting to see more projects using it directly though, like Zig's implementation in std.Io.Uring, although it's not quite stable yet and uses a lot of test allocators. They're still iterating on it each year!
