@@ -1,0 +1,27 @@
+- Version control systems (May 2026)
+    - Reminder of Git internals: ref storage (often in packfiles), Merkle DAG including header to get commit hashes, and a CLI on top of that.
+    - jj - a bit hard to map it to git workflows, it's all bookmarks and revisions, rebasing doesn't exist.
+        - You just have to target specific revisions.
+        - Heard it can be better for git worktrees (workspaces in jj) - much better experience for agents to use isolated environments.
+        - Heard good things about their 'undo'/'redo' command and automatic rebase.
+    - New products and gossip
+        - code.storage - kind of just like, managed Git servers and storage.
+            - Probably selling to like, agent environment and RL companies, alternative to GitHub.
+            - Used to be a GitHub wrapper, with beautiful code review - then they open-sourced their components and then pivoted to AI / programmatic environments.
+            - They did "customer-driven" or social Git, where you can share PRs with the community of your product on Discord for instance. Kind of in the same space as Linear Diffs, a better code review tool with good UX.
+        - entire.io - some kind of new agent CLI that auto-attaches agent session history
+            - Really terrible landing page and above-the-fold lol.
+            - "Every commit tells a story. Now you can read it." (wat?)
+    - Piper (CACM '16)
+        - Google's proprietary source control. Originally based on Mercurial.
+        - Quite an old paper, from 2016, but already they mention that the majority of commits are from automated systems rather than human committers. (Seems kind of annoying? I don't really want machines in my commit history.)
+        - Some teams like Chrome and Android use Git, but the scale and rate of commits + files touched makes it impractical for their monorepo. Some 40k commits per day.
+        - Business features like file-level access control, audit logging, and purging data.
+        - "CitC" - FUSE filesystem that serves the monorepo dynamically through cloud backend, copy-on-write strategy for only saving / tracking changed files.
+        - Atomic property, where you can change 100k files all at once if needed.
+    - GitHub Actions security (USENIX Security '22)
+        - https://www.usenix.org/system/files/sec22-koishybayev.pdf
+        - Probably more relevant now in 2026, with all of the recent supply chain attacks that have been happening, as well as AI agent automations + prompt injection attack surface.
+        - 99.8% of workflows are "overprivileged", having read-write (default) access to the repo. Hmm I think [GitHub changed this in 2023](https://github.blog/changelog/2023-02-02-github-actions-updating-the-default-github_token-permissions-to-read-only/), good.
+        - Other attack vectors: external pull requests, and untrusted actions without pinned SHA.
+        - Even if you pin an action, it might pull in other actions without pinned version.
