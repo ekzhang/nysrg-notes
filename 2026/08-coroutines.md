@@ -1,0 +1,19 @@
+- Coroutines (August 2026)
+    - rsc makes a good observation in [Coroutines in Go](https://research.swtch.com/coro) that Python generators are not true coroutines in the sense of machines that suspend and resume execution, if they were then calling into a function wouldn't require `yield from`.
+        - There's a certain language feature that coroutines require, and that is stack switching.
+        - Unless you compile them down into state machines, and you can view them that way instead. This is how LLVM does things in `llvm.coro.suspend`.
+        - Lots of edge cases and things to think about, via examples of the tool in action. Very hard to think about all the language design choices.
+        - Difference between coroutines and goroutines? (Parallelism.)
+    - Effects - algebraic effects are complex, Koka etc., I guess in addition to the syntactical parts / difficulties in understanding, it's also just hard to implement them efficiently in the compiler or runtime in a general way.
+        - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2FFcQJWoyp_b.png?alt=media&token=87ff057a-0280-47de-b0bb-8a5a011198cc)
+    - setjmp/longjmp in C?
+        - Coroutines let you do threading (suspend/resume sync primitives) but without the overhead.
+        - Straight-line, imperative representation of an algorithm that's more interleaved.
+    - In LLVM, there is a `presplitcoroutine`, you can do a certain incantation and leave in blanks for the size of the local variable closure in malloc to lower this to assembly.
+        - Looks like with -O1, clang will just devirtualize all of the coroutine calls, which is pretty cool.
+        - Otherwise the main function creates a malloc'd struct with continuation function pointers (pc value) that you can branch to, blr in assembly.
+        - _free it from dynamic memory allocation when done.
+    - Go's goroutine leak detector is pretty interesting, enabled in Go 1.27 by default.
+        - You can visit `/debug/pprof/goroutineleak?debug=1` on your web server and automatically get a list of all the leaked goroutines and their line numbers.
+        - Seems like it would be useful for someone running a production server for a while, just hit it with an HTTP request and get a useful working trace by default!
+        - Can reproduce the result here. :)
