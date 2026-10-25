@@ -1,0 +1,26 @@
+- World models (July 2026)
+    - Classic paper on Dyna from Richard Sutton. The algorithm is pretty hard to understand because notation is nonstandard (predates MDPs being common).
+        - "Choosing a hypothetical world state" means predicting it with a world model, it's just a bit confusingly written to a modern audience, not really "choosing" it but statistically modeling the state transition matrix.
+        - Let's think about the world model as a way to accelerate getting rollouts from your MDP. You produce "hypothetical" experiences in addition to real experience.
+    - Reading the [World Models](https://worldmodels.github.io/) paper was cool - their model of the world was an autoregressive LSTM (for memory) with Mixture Density Network as output (sum of conditional probability densities).
+        - They change temperature to "noise" the model's outputs to simulate additional states. It makes sense especially for their toy examples, sample diversity matters a lot and you need to model the world with some diversity, not just your best guess.
+        - MDN produces a noised latent that gets fed into a VAE, and we're all set.
+        - Probably you could just train an autoregressive transformer instead of an LSTM, then scale it up - that's what modern approaches likely do.
+        - There's a focus on modeling the "world" here in terms of visual inputs, physics.
+        - World models are kind of like synthetic data for RL environments.
+        - Discussion about VAEs: why are they still popular? I guess it's just the simplest definition of a "learned codec" - image codecs are obviously information efficient so why not train a learned encoding in front of it. FLUX still does it btw. See [Mimi](https://huggingface.co/kyutai/mimi) for audio.
+    - DIAMOND: Diffusion world models. Seems like a pretty clear extension of the world models with just a diffusion image objective and learner. Reading this paper reminds me of where the field has its roots in: sample-efficient RL (Atari 100k) and the likes of on-policy RL for robot control without being computationally intractable.
+    - [V-JEPA 2](https://arxiv.org/abs/2506.09985)
+        - The idea here is to learn representations (latent vectors) instead of modeling the actual seuqnece.
+        - Still self-supervised. But unlike autoregressive models that predict token t+1 from tokens 1..t, it instead uses any amount of partial evidence to predict any other targets. For example, predicting into the future, or a view from another occluded camera angle.
+        - The embeddings give it a degree of **uncertainty** implicitly through the embedding space. This is not the same as predicting the whole conditional distribution.
+        - But you can for instance, project the target embedding against "is there a car here?"
+    - [FLUX 3](https://bfl.ai/blog/flux-3)
+        - Multimodal foundation model: all modalities in and out, trained in a unified pipeline.
+            - "Each is a projection of the same underlying reality"
+            - HN says: "Frivolous use of the term World Model." lol
+        - Builds on an approach of "self-supervised flow matching," or basically an extra teacher (less noised)-student (more noised) loss that equals RMS of the encoder logits before the first transformer layer in the DiT.
+            - This lets them train the vision encoder simultaneously with the diffusion head.
+            - Their evals show better performance, really it's just an auxiliary loss though. I guess it helps preserve "semantic" understanding during noise but idk, a bit skeptical.
+        - They show a lot of heads on top of the backbone, which is neat. :)
+        - I wonder if they run into split-brain at all though, with all the different objectives and token formats. For now it's a generative media model though, with video support.
