@@ -1,0 +1,41 @@
+- Network stacks (October 2026)
+    - We have a mix of folks: just normal engineers, but also some enthusiasts are discussing running their own hardware, networking together DGX Sparks and Optane RAM for KV cache on "cheap" hardware, with homegrown inference engines.
+    - Networking is changing - like the [seventh edition](https://7e.systemsapproach.org/) of the systems approach mentions, LLM datacenter networking is hot right now. But this too will evolve.
+    - [ixy paper](https://arxiv.org/pdf/1901.10664) - user-space networking
+        - ixy is kind of a small / tiny version of DPDK - you literally have user-space code directly talking to the NIC via DMA and memory mapped BARs.
+        - DPDK is very mature, user-mode drivers for basically all commodity NICs today.
+        - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2FT40wT2T1-j.png?alt=media&token=feabb1ff-c843-4ceb-b9bf-70b1708d3ea5)
+        - Running the entire driver in user space has an advantage - the application can now control every detail of the hardware, rather than having a barrier with the kernel. Less context switching and lower-level support for RDMA.
+        - Core programming model is tx/rx ring buffers, with the head and tail registers stored in MMIO, shared ownership as they're checked. Power-of-two ring sizes. The ring has descriptors to memory regions.
+        - Performance is important - checksum offload, avoiding sk_buff memory allocations.
+            - Need to use hugepages to avoid Intel IOMMU overhead.
+            - NUMA mapping consideration - pin thread to the NUMA node local to the ingress NIC, distribute packet buffer across nodes.
+        - Glossary
+            - `ixgbe` = common OSS Linux driver for Intel 10 GbE PCIe network adapters.
+            - `virtio-net` = virtual machine network driver
+            - `DMA/IOMMU` = chip on the motherboard that lets PCIe NICs write directly into CPU RAM
+            - `MMIO` (__not__ IOMMU) = mapping NIC hardware registers into host CPU memory, like ring buffer pointers (BARs)
+            - `MSI-X` - PCIe thing for NIC to send interrupt to CPU
+            - `uio` = actual Linux kernel module for building user-space device drivers, low-level mmap of device BARs and shared memory + interrupts on `/dev/uioX` - newer / safer version of this is `vfio-pci`
+            - netmap / PF_RING ZC / PFQ = older, out-of-tree versions of `AF_XDP` today
+    - Some networking lore: [Echo Protocol](https://datatracker.ietf.org/doc/html/rfc862) is a single-page RFC explaining a defunct echo protocol on TCP/UDP port 7. Also, QUIC is a very complicated spec!
+    - In general there's lots of "smart" queues and ring buffers at every layer of the network stack - routers, switches, drivers, kernel space, application layer, etc. - makes sense given you want to be non-blocking in all cases though, with unreliable datagrams.
+        - For ixy in particular, ixy_tx_batch and ixy_rx_batch APIs show examples of this - if there's not enough room in the buffer the standard approach is just to drop the packet.
+    - https://en.wikipedia.org/wiki/Bufferbloat
+    - NUMA nodes learning
+        - https://cpufun.substack.com/p/more-m1-fun-hardware-information
+        - A lot of systems today are dual-socket CPU systems, where there are two "packages" each having its own NUMA node (main memory).
+            - Within a 32-core intel package, there are 64 logical processors (threads), and also each 8 cores has a shared L3 cache.
+            - ![](https://firebasestorage.googleapis.com/v0/b/firescript-577a2.appspot.com/o/imgs%2Fapp%2Fekzhang%2FBxkgpcZgKZ.png?alt=media&token=87da0e11-31cb-4a56-b62f-cb9633c8d32e)
+            - Common topology here is that NUMA node 0 has the two network interfaces over PCIe, and NUMA node 1 has the local SSD. Apparently this is due to lane limits on the package itself.
+            - So if you're configuring DPDK, you want to run low-latency stuff pinned to NUMA node 0. This is called out in the docs. (But you can still handoff processing to node 1.)
+        - Originally was interested because of reading this [GPU communications](https://piyushk52.github.io/jekyll/update/2026/10/22/mem_share.html) blog post, but it's good to know in general that our CPUs have non-uniform topology. It influences how we think about the GPUs as well. The distance affects latency and bandwidth!
+    - TCP_REPAIR containers
+        - Mental model here is that it's more for temporary "parking" of a container, not for a long-term checkpoint and fork / restore setup.
+        - Open TCP connections can be maintained, with all of the sequence numbers and everything. But they need the same IP to work after restore, and you can't duplicate it twice because then there would be two peers at the end of the connection.
+        - Also, the other end has to not have hanged up yet. So depending on TCP timeouts, keepalive, application timeouts, it could be after minutes or an hour, but not long-term.
+        - I think it's most exciting for temporarily parking containers (CPU/memory optimization?), but honestly, applications should probably just be robust to connection breakage and reconnect themselves automatically.
+    - IP fragmentation - fragquiz: https://valerieaurora.org/fragquiz.html
+        - This is very difficult. I think we got almost all of the questions wrong on the first try, and it's very in-your-face since it's actually measured on your laptop haha.
+        - The thing to know about IP fragmentation: it's not usually desirable, and it's not reliable if you try to turn it on because routers may drop fragments due to security hardening. But it's also not reliably able to be turned off during path MTU discovery, as some routers will do fragmentation anyway! So it's just a bit of a pain in both cases.
+        - IPv6 does not even have fragmentation!
