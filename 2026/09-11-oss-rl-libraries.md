@@ -1,0 +1,34 @@
+- Open-source RL libraries [[September 11th, 2026]]
+    - Ray - foundational paper for all of this, even in distributed systems land.
+        - Originally designed to unify training, simulation, and serving. Simulation meaning rollouts / agents in modern parlance, and "actors" (stateful) for training.
+        - It had good support for GPUs from the beginning, and the distributed RPC is the real key feature here. You can just start up a Ray cluster and see the training begin, by writing a training loop from a single controller and calling RPCs to train, run sampling, etc.
+    - SkyRL v0.1 - good blog post, key picture of having trainer and generator (inference engine + environment) together with a flexible/extensible API.
+        - Interesting that they mention modularity as a defining feature, I wonder how that turned out for them. It's what allowed them to expose a TInker-compatible API though, being just the trainer and sampler parts of the framework (disaggregated).
+        - `Environment` and `Tool` interfaces.
+            - Environment = https://github.com/NovaSky-AI/SkyRL/blob/main/skyrl-gym/skyrl_gym/envs/base_text_env.py - list of messages and string for actions, step to produce the next action, list of ToolGroups.
+            - Tool = just a wrapped function with a name, currently.
+        - This is a pretty barebones framework right now, though. Other libraries like SLIME just don't worry about providing Environment / Tool interfaces and let the user define their own, such as in their examples - [following a convention](https://github.com/THUDM/slime/blob/4c193f1f37509cca70f0e88807a9305b70f63f4e/examples/geo3k_vlm_multi_turn/base_env.py).
+    - Keep the tokens flowing
+        - This is a blog post from HF, specifically about __async RL__'s training landscape - i.e., how libraries deal with bounded staleness, distributed comms, weight sync and rollout buffers.
+        - There are lots of depended-on libraries that are also very heavy: NCCL broadcast for weight sync, Ray for actor framework. These are tested in prod, but they're also kind of a pain to set up / debug and manage, guess they provide lots of value.
+        - RL inference versus traditional inference - throughput-focused, less latency-sensitive, numerics are trickier and need to be carefully matched with training.
+        - Very interesting to hear about the different interruption models for weight sync.
+        - They mentioned expert routing replay at the end, very important.
+    - slime
+        - Main features are the trainer and samplers, plus a very short (<100 line) rollout loop.
+        - Usually you plug into hooks within the library, such as a custom generation loop. This is how you'd implement sandboxing agents or so on.
+    - Discussions about DSV4.1 RL and KV cache storage
+        - Obviously bounded SWA replay is a bit sketchy, but that's fine I guess.
+        - DSV4.1 actually has aggregated / combined inference and training and pauses them during a train step, which is interesting. I guess that works well for them but definitely increases the complexity quite a lot, especially memory management.
+        - Mooncake seems really promising, some integrations into LMCache (original project) for tiered KV cache and zero-copy transfers. Lots of optimization work here.
+    - Other discussions
+        - Most of the work is now on environment and data fidelity. The training and inference infra exists in many OSS libraries, but have you thought about reward hacking and the structure of your tasks so that models can learn well.
+        - Can you port that over between frameworks? Coding agents are quite good at that, but you have errors.
+        - Why is there no cross-platform renderers? You might just have a __parser__ - generate rollouts have a bunch of teacher models and then build compatibility between them.
+        - Harbor (RL environment standard), often easier to spend time comparing evals across different datasets.
+    - Interesting places that people don't understand the details of yet.
+        - Miles v0.1 has a buffer between sampler and trainer that stores rollouts before training. Each group has staleness measured by maximum staleness of any trajectory, you can drop old rollouts in this case.
+        - They mention some RL systems science around whether trainer is bottlenecked (queue is full, always) or sampler is bottlenecked, in which case the trainer remains idle.
+        - How to run training on low-precision? MXFP8 or NVFP4? There's beta support for both of these in Miles right now, through Megatron-LM, and some other frameworks based on PyTorch FSDP have their own implementations of low-precision training.
+    - Getting an RL loop to run on a Jev-like model
+        - https://x.com/ekzhang1/status/2101819028939403770
